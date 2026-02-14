@@ -7,6 +7,7 @@ HLS="$BASE/hls"
 LOGS="$BASE/logs"
 BIN="/usr/local/bin/menu"
 COOKIES="$BASE/cookies.txt"
+PLAYLIST="$BASE/playlist.m3u"
 
 echo "===== IPTV PRO ANTI-BOT INSTALLER ====="
 
@@ -103,7 +104,6 @@ add_channel() {
 
   (
     while true; do
-      # yt-dlp com cookies para evitar bloqueio anti-bot
       URL=$(yt-dlp --cookies "$COOKIES" -f b -g "$LINK" 2>>"$LOGFILE") || {
         echo "$(date) Erro ao extrair URL. Tentando novamente em 10s..." >> "$LOGFILE"
         sleep 10
@@ -124,12 +124,20 @@ add_channel() {
   ) >/dev/null 2>&1 &
 
   STREAMS["$NAME"]=$!
+  echo "$(date) Canal $NAME iniciado" >> "$LOGS/system.log"
+
+  # Atualiza a playlist automaticamente
+  export_playlist
 }
 
 stop_channel() {
   read -rp "Nome: " NAME
   kill "${STREAMS[$NAME]}" 2>/dev/null
   unset STREAMS["$NAME"]
+  echo "$(date) Canal $NAME parado" >> "$LOGS/system.log"
+
+  # Atualiza a playlist
+  export_playlist
 }
 
 export_playlist() {
@@ -141,12 +149,6 @@ export_playlist() {
     echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
     echo "http://$IP/hls/$NAME.m3u8" >> "$PLAYLIST"
   done
-
-  echo
-  echo "Playlist completa criada:"
-  echo "$PLAYLIST"
-  echo "Pode abrir direto no VLC ou IPTV Smarters."
-  read
 }
 
 dashboard() {
@@ -177,7 +179,7 @@ menu() {
     echo "1) Adicionar canal"
     echo "2) Parar canal"
     echo "3) Dashboard"
-    echo "4) Exportar playlist"
+    echo "4) Exportar playlist (atualiza manualmente)"
     echo "5) Ver logs"
     echo "0) Sair"
     echo
@@ -203,4 +205,4 @@ chmod +x "$BIN"
 echo
 echo "===== INSTALAÇÃO CONCLUÍDA ====="
 echo "Digite: menu"
-echo "Certifique-se de ter exportado cookies do YouTube para $COOKIES"
+echo "A playlist completa será atualizada automaticamente em $PLAYLIST"
