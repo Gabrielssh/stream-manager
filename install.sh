@@ -1,245 +1,217 @@
 #!/usr/bin/env bash
 
-==========================================
-
-#STREAM MANAGER PRO — AUTO INSTALLER HLS
-
-#IPTV Streaming Server 24/7
-#
-==========================================
+# ==========================================
+# STREAM MANAGER PRO — AUTO INSTALLER
+# ==========================================
 
 set -e
 
 BIN="/usr/local/bin/menu"
 BASE="/root/stream_manager"
-HLS_BASE="/var/www/hls"
 
 echo "======================================"
 echo " STREAM MANAGER PRO INSTALLER"
 echo "======================================"
 
-ROOT CHECK
-
+# ROOT CHECK
 if [ "$EUID" -ne 0 ]; then
-echo "Execute como root:"
-echo "sudo bash install.sh"
-exit 1
+  echo "Execute como root:"
+  echo "sudo bash install.sh"
+  exit 1
 fi
 
 echo "[+] Atualizando sistema..."
 apt update -y
 
 echo "[+] Instalando dependências..."
-
-apt install -y 
-ffmpeg 
-tmux 
-git 
-curl 
-wget 
-nginx
+apt install -y ffmpeg tmux git curl wget coreutils
 
 echo "[+] Instalando yt-dlp..."
-
-curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp 
--o /usr/local/bin/yt-dlp
-
+curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+  -o /usr/local/bin/yt-dlp
 chmod +x /usr/local/bin/yt-dlp
 
 echo "[+] Criando diretórios..."
-
 mkdir -p "$BASE/streams"
 mkdir -p "$BASE/logs"
-mkdir -p "$HLS_BASE"
 
-echo "[+] Configurando nginx..."
-
-cat > /etc/nginx/sites-enabled/hls << 'NG'
-server {
-listen 80;
-location /hls {
-root /var/www;
-add_header Cache-Control no-cache;
-add_header Access-Control-Allow-Origin *;
-types {
-application/vnd.apple.mpegurl m3u8;
-video/mp2t ts;
-}
-}
-}
-NG
-
-systemctl restart nginx
-
-echo "[+] Criando menu principal..."
+echo "[+] Instalando menu principal..."
 
 cat > "$BIN" << 'EOF'
 #!/usr/bin/env bash
 
 BASE_DIR="/root/stream_manager"
-HLS_BASE="/var/www/hls"
+STREAM_DIR="$BASE_DIR/streams"
+LOG_DIR="$BASE_DIR/logs"
 
-mkdir -p "$BASE_DIR" "$HLS_BASE"
+mkdir -p "$STREAM_DIR" "$LOG_DIR"
 
 declare -A STREAMS_PID
-declare -A STREAM_LINK
 declare -A STREAM_HISTORY
+declare -A STREAM_LINK
 
-stream_engine() {
-NAME="$1"
-LINK="$2"
-HLS_DIR="$HLS_BASE/$NAME"
-
-mkdir -p "$HLS_DIR"
-
-while true; do
-URL=$(yt-dlp -f best -g "$LINK" 2>/dev/null)
-
-if [ -z "$URL" ]; then
-  sleep 5
-  continue
-fi
-
-ffmpeg -re -i "$URL" \
-  -c:v libx264 -preset veryfast -g 48 -sc_threshold 0 \
-  -c:a aac -ar 44100 \
-  -f hls \
-  -hls_time 4 \
-  -hls_list_size 6 \
-  -hls_flags delete_segments \
-  "$HLS_DIR/index.m3u8"
-
-sleep 2
-
-done
-}
-
-add_stream() {
-read -rp "Nome do canal: " NAME
-read -rp "Link YouTube: " LINK
-
-stream_engine "$NAME" "$LINK" &
-PID=$!
-
-STREAMS_PID["$NAME"]=$PID
-STREAM_LINK["$NAME"]=$LINK
-STREAM_HISTORY["$NAME"]="STARTED"
-
-echo "Canal iniciado!"
-sleep 1
-}
-
-start_stream() {
-read -rp "Nome: " NAME
-
-LINK="${STREAM_LINK[$NAME]}"
-
-if [ -z "$LINK" ]; then
-echo "Canal não encontrado!"
-sleep 1
-return
-fi
-
-stream_engine "$NAME" "$LINK" &
-STREAMS_PID["$NAME"]=$!
-STREAM_HISTORY["$NAME"]="RESTARTED"
-}
-
-stop_stream() {
-read -rp "Nome: " NAME
-
-PID="${STREAMS_PID[$NAME]}"
-
-kill "$PID" 2>/dev/null
-unset STREAMS_PID["$NAME"]
-
-STREAM_HISTORY["$NAME"]="STOPPED"
-}
-
+# -------------------------
+# DASHBOARD
+# -------------------------
 dashboard() {
-while true; do
-clear
-echo "===== STREAM MANAGER DASHBOARD ====="
-uptime
-echo
+  while true; do
+    clear
+    echo "===== STREAM MANAGER ====="
+    echo "Streams ativas: ${#STREAMS_PID[@]}"
+    uptime
+    echo
 
-for NAME in "${!STREAMS_PID[@]}"; do
-  PID="${STREAMS_PID[$NAME]}"
-  if ps -p "$PID" >/dev/null; then
-    echo "▶ $NAME ONLINE"
-  else
-    echo "✖ $NAME OFFLINE"
+    for NAME in "${!STREAMS_PID[@]}"; do
+      PID="${STREAMS_PID[$NAME]}"
+      if ps -p "$PID" >/dev/null 2>&1; then
+        echo "▶ $NAME (PID $PID) ON"
+      else
+        echo "✖ $NAME OFF"
+      fi
+    done
+
+    sleep 2
+  done
+}
+
+# -------------------------
+# ADD STREAM
+# -------------------------
+add_stream() {
+  read -rp "Nome do canal: " NAME
+  read -rp "Link YouTube/URL: " LINK
+
+  (
+    while true; do
+      URL=$(yt-dlp -f best -g "$LINK" 2>/dev/null)
+      ffmpeg -re -i "$URL" -f null - >/dev/null 2>&1
+      sleep 2
+    done
+  ) &
+
+  STREAMS_PID["$NAME"]=$!
+  STREAM_HISTORY["$NAME"]="STARTED"
+  STREAM_LINK["$NAME"]="$LINK"
+
+  echo "Stream iniciada!"
+  sleep 1
+}
+
+# -------------------------
+# START STREAM
+# -------------------------
+start_stream() {
+  read -rp "Nome: " NAME
+  LINK="${STREAM_LINK[$NAME]}"
+
+  if [ -z "$LINK" ]; then
+    echo "Stream não encontrada!"
+    sleep 1
+    return
   fi
-done
 
-sleep 2
+  (
+    while true; do
+      URL=$(yt-dlp -f best -g "$LINK" 2>/dev/null)
+      ffmpeg -re -i "$URL" -f null - >/dev/null 2>&1
+      sleep 2
+    done
+  ) &
 
-done
+  STREAMS_PID["$NAME"]=$!
+  STREAM_HISTORY["$NAME"]="RESTARTED"
 }
 
+# -------------------------
+# STOP STREAM
+# -------------------------
+stop_stream() {
+  read -rp "Nome: " NAME
+
+  PID="${STREAMS_PID[$NAME]}"
+
+  kill "$PID" 2>/dev/null
+  unset STREAMS_PID["$NAME"]
+
+  STREAM_HISTORY["$NAME"]="STOPPED"
+
+  echo "Stream parada!"
+  sleep 1
+}
+
+# -------------------------
+# EXPORT M3U
+# -------------------------
 export_m3u() {
-SERVER_IP=$(hostname -I | awk '{print $1}')
-M3U="$BASE_DIR/playlist.m3u"
+  M3U="$BASE_DIR/playlist.m3u"
 
-echo "#EXTM3U" > "$M3U"
+  echo "#EXTM3U" > "$M3U"
 
-for NAME in "${!STREAM_LINK[@]}"; do
-echo "#EXTINF:-1,$NAME" >> "$M3U"
-echo "http://$SERVER_IP/hls/$NAME/index.m3u8" >> "$M3U"
-done
+  for NAME in "${!STREAM_LINK[@]}"; do
+    echo "#EXTINF:-1,$NAME" >> "$M3U"
+    echo "${STREAM_LINK[$NAME]}" >> "$M3U"
+  done
 
-echo "Playlist criada:"
-echo "$M3U"
-read -rp "ENTER..."
+  echo "Playlist criada: $M3U"
+  read -rp "ENTER..."
 }
 
+# -------------------------
+# HISTÓRICO
+# -------------------------
 history_streams() {
-clear
-echo "===== HISTÓRICO ====="
+  echo "===== HISTÓRICO ====="
 
-for NAME in "${!STREAM_HISTORY[@]}"; do
-echo "$NAME → ${STREAM_HISTORY[$NAME]}"
-done
+  for NAME in "${!STREAM_HISTORY[@]}"; do
+    echo "$NAME → ${STREAM_HISTORY[$NAME]}"
+  done
 
-read -rp "ENTER..."
+  read -rp "ENTER..."
 }
 
+# -------------------------
+# BACKUP
+# -------------------------
 backup_system() {
-tar -czf "$BASE_DIR/backup.tar.gz" "$BASE_DIR"
-echo "Backup criado em:"
-echo "$BASE_DIR/backup.tar.gz"
-read -rp "ENTER..."
+  tar -czf "$BASE_DIR/backup.tar.gz" "$BASE_DIR"
+
+  echo "Backup criado:"
+  echo "$BASE_DIR/backup.tar.gz"
+
+  read -rp "ENTER..."
 }
 
+# -------------------------
+# MENU
+# -------------------------
 menu() {
-while true; do
-clear
-echo "===== STREAM MANAGER ====="
-echo "1) Add stream"
-echo "2) Start stream"
-echo "3) Stop stream"
-echo "4) Dashboard"
-echo "5) Export M3U"
-echo "6) Histórico"
-echo "9) Backup"
-echo "0) Sair"
-echo
+  while true; do
+    clear
+    echo "===== STREAM MANAGER ====="
+    echo "1) Add stream"
+    echo "2) Start stream"
+    echo "3) Stop stream"
+    echo "4) Dashboard"
+    echo "5) Export M3U"
+    echo "6) Histórico"
+    echo "9) Backup"
+    echo "0) Sair"
+    echo
 
-read -rp "Opção: " OP
+    read -rp "Opção: " OP
 
-case "$OP" in
-  1) add_stream ;;
-  2) start_stream ;;
-  3) stop_stream ;;
-  4) dashboard ;;
-  5) export_m3u ;;
-  6) history_streams ;;
-  9) backup_system ;;
-  0) exit ;;
-  *) echo "Opção inválida"; sleep 1 ;;
-esac
-
-done
+    case "$OP" in
+      1) add_stream ;;
+      2) start_stream ;;
+      3) stop_stream ;;
+      4) dashboard ;;
+      5) export_m3u ;;
+      6) history_streams ;;
+      9) backup_system ;;
+      0) exit ;;
+      *) echo "Opção inválida"; sleep 1 ;;
+    esac
+  done
 }
 
 menu
