@@ -6,8 +6,9 @@ BASE="/root/iptv_pro"
 HLS="$BASE/hls"
 LOGS="$BASE/logs"
 BIN="/usr/local/bin/menu"
+COOKIES="$BASE/cookies.txt"
 
-echo "===== IPTV PRO UPGRADE INSTALLER ====="
+echo "===== IPTV PRO ANTI-BOT INSTALLER ====="
 
 if [ "$EUID" -ne 0 ]; then
   echo "Execute como root"
@@ -90,6 +91,7 @@ BASE="/root/iptv_pro"
 HLS="$BASE/hls"
 LOGS="$BASE/logs"
 PLAYLIST="$BASE/playlist.m3u"
+COOKIES="$BASE/cookies.txt"
 
 declare -A STREAMS
 
@@ -101,7 +103,12 @@ add_channel() {
 
   (
     while true; do
-      URL=$(yt-dlp -f b -g "$LINK" 2>>"$LOGFILE")
+      # yt-dlp com cookies para evitar bloqueio anti-bot
+      URL=$(yt-dlp --cookies "$COOKIES" -f b -g "$LINK" 2>>"$LOGFILE") || {
+        echo "$(date) Erro ao extrair URL. Tentando novamente em 10s..." >> "$LOGFILE"
+        sleep 10
+        continue
+      }
 
       ffmpeg -loglevel error -hide_banner \
       -re -i "$URL" \
@@ -126,12 +133,9 @@ stop_channel() {
 }
 
 export_playlist() {
-  # força IPv4
   IP=$(curl -4 -s ifconfig.me)
-
   echo "#EXTM3U" > "$PLAYLIST"
 
-  # percorre todos os canais ativos no HLS
   for FILE in "$HLS"/*.m3u8; do
     NAME=$(basename "$FILE" .m3u8)
     echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
@@ -141,7 +145,7 @@ export_playlist() {
   echo
   echo "Playlist completa criada:"
   echo "$PLAYLIST"
-  echo "Você pode abrir essa playlist diretamente no VLC ou outro player IPTV."
+  echo "Pode abrir direto no VLC ou IPTV Smarters."
   read
 }
 
@@ -169,7 +173,7 @@ view_logs() {
 menu() {
   while true; do
     clear
-    echo "===== IPTV PRO ====="
+    echo "===== IPTV PRO ANTI-BOT ====="
     echo "1) Adicionar canal"
     echo "2) Parar canal"
     echo "3) Dashboard"
@@ -199,3 +203,4 @@ chmod +x "$BIN"
 echo
 echo "===== INSTALAÇÃO CONCLUÍDA ====="
 echo "Digite: menu"
+echo "Certifique-se de ter exportado cookies do YouTube para $COOKIES"
