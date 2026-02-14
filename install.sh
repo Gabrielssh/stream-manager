@@ -2,10 +2,10 @@
 
 ==========================================
 
-STREAM MANAGER PRO — AUTO INSTALLER HLS
+#STREAM MANAGER PRO — AUTO INSTALLER HLS
 
-IPTV Streaming Server 24/7
-
+#IPTV Streaming Server 24/7
+#
 ==========================================
 
 set -e
