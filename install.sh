@@ -131,16 +131,17 @@ export_playlist() {
 
   echo "#EXTM3U" > "$PLAYLIST"
 
+  # percorre todos os canais ativos no HLS
   for FILE in "$HLS"/*.m3u8; do
     NAME=$(basename "$FILE" .m3u8)
     echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
-    # Corrigido: adiciona /hls/ na URL
     echo "http://$IP/hls/$NAME.m3u8" >> "$PLAYLIST"
   done
 
   echo
-  echo "Playlist criada:"
+  echo "Playlist completa criada:"
   echo "$PLAYLIST"
+  echo "Você pode abrir essa playlist diretamente no VLC ou outro player IPTV."
   read
 }
 
