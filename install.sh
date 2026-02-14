@@ -1,38 +1,48 @@
 #!/usr/bin/env bash
 
-# =====================================
-# IPTV PRO SERVER — AUTO INSTALLER
-# =====================================
-
 set -e
 
 BASE="/root/iptv_pro"
+HLS="$BASE/hls"
 BIN="/usr/local/bin/menu"
 
-echo "================================="
-echo " IPTV PRO SERVER INSTALLER"
-echo "================================="
+echo "===== IPTV PRO UPGRADE INSTALLER ====="
 
 if [ "$EUID" -ne 0 ]; then
-  echo "Execute como root:"
-  echo "sudo bash install.sh"
+  echo "Execute como root"
   exit 1
 fi
 
-echo "[+] Atualizando sistema..."
 apt update -y
+apt install -y ffmpeg nginx curl wget git python3
 
-echo "[+] Instalando dependências..."
-apt install -y ffmpeg curl wget git python3 python3-pip
-
-echo "[+] Instalando yt-dlp..."
 curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
 -o /usr/local/bin/yt-dlp
 chmod +x /usr/local/bin/yt-dlp
 
-mkdir -p "$BASE/hls"
+mkdir -p "$HLS"
 
-echo "[+] Criando menu IPTV..."
+echo "Configurando nginx..."
+
+cat > /etc/nginx/sites-enabled/default << EOF
+server {
+    listen 80;
+
+    location /hls {
+        types {
+            application/vnd.apple.mpegurl m3u8;
+            video/mp2t ts;
+        }
+
+        root $BASE;
+        add_header Cache-Control no-cache;
+    }
+}
+EOF
+
+systemctl restart nginx
+
+echo "Criando menu..."
 
 cat > "$BIN" << 'EOF'
 #!/usr/bin/env bash
@@ -41,25 +51,15 @@ BASE="/root/iptv_pro"
 HLS="$BASE/hls"
 PLAYLIST="$BASE/playlist.m3u"
 
-mkdir -p "$HLS"
-
 declare -A STREAMS
 
-start_server() {
-  cd "$HLS"
-  python3 -m http.server 8080 >/dev/null 2>&1 &
-  SERVER_PID=$!
-}
-
-add_youtube() {
-  read -rp "Nome do canal: " NAME
+add_channel() {
+  read -rp "Nome canal: " NAME
   read -rp "Link YouTube: " LINK
 
   (
     while true; do
-      URL=$(yt-dlp -f best -g "$LINK" 2>/dev/null)
-      [ -z "$URL" ] && sleep 5 && continue
-
+      URL=$(yt-dlp -f best -g "$LINK")
       ffmpeg -re -i "$URL" \
       -c copy \
       -f hls \
@@ -74,7 +74,7 @@ add_youtube() {
   STREAMS["$NAME"]=$!
 }
 
-stop_stream() {
+stop_channel() {
   read -rp "Nome: " NAME
   kill "${STREAMS[$NAME]}" 2>/dev/null
   unset STREAMS["$NAME"]
@@ -86,66 +86,49 @@ export_playlist() {
   echo "#EXTM3U" > "$PLAYLIST"
 
   for FILE in "$HLS"/*.m3u8; do
-    [ -f "$FILE" ] || continue
     NAME=$(basename "$FILE" .m3u8)
-
     echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
-    echo "http://$IP:8080/$NAME.m3u8" >> "$PLAYLIST"
+    echo "http://$IP/hls/$NAME.m3u8" >> "$PLAYLIST"
   done
 
   echo "Playlist criada:"
   echo "$PLAYLIST"
-  read -rp "ENTER..."
+  read
 }
 
 dashboard() {
   while true; do
     clear
     echo "===== IPTV PRO DASHBOARD ====="
-    echo "Streams ativas: ${#STREAMS[@]}"
-    echo
+    echo "Streams: ${#STREAMS[@]}"
 
     for NAME in "${!STREAMS[@]}"; do
       PID="${STREAMS[$NAME]}"
-      if ps -p "$PID" >/dev/null 2>&1; then
-        echo "▶ $NAME ON"
-      else
-        echo "✖ $NAME OFF"
-      fi
+      ps -p "$PID" >/dev/null && echo "▶ $NAME ON" || echo "✖ $NAME OFF"
     done
 
     sleep 2
   done
 }
 
-backup() {
-  tar -czf "$BASE/backup.tar.gz" "$BASE"
-  echo "Backup criado em $BASE/backup.tar.gz"
-  read
-}
-
 menu() {
-  start_server
-
   while true; do
     clear
-    echo "===== IPTV PRO SERVER ====="
-    echo "1) Adicionar canal YouTube"
+    echo "===== IPTV PRO ====="
+    echo "1) Adicionar canal"
     echo "2) Parar canal"
     echo "3) Dashboard"
     echo "4) Exportar playlist"
-    echo "5) Backup"
     echo "0) Sair"
     echo
 
     read -rp "Opção: " OP
 
     case "$OP" in
-      1) add_youtube ;;
-      2) stop_stream ;;
+      1) add_channel ;;
+      2) stop_channel ;;
       3) dashboard ;;
       4) export_playlist ;;
-      5) backup ;;
       0) exit ;;
     esac
   done
@@ -156,10 +139,5 @@ EOF
 
 chmod +x "$BIN"
 
-echo
-echo "================================="
-echo " INSTALAÇÃO CONCLUÍDA ✅"
-echo "================================="
-echo
+echo "Instalação concluída!"
 echo "Digite: menu"
-echo
