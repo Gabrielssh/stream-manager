@@ -134,7 +134,8 @@ export_playlist() {
   for FILE in "$HLS"/*.m3u8; do
     NAME=$(basename "$FILE" .m3u8)
     echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
-    echo "http://$IP/$NAME.m3u8" >> "$PLAYLIST"
+    # Corrigido: adiciona /hls/ na URL
+    echo "http://$IP/hls/$NAME.m3u8" >> "$PLAYLIST"
   done
 
   echo
