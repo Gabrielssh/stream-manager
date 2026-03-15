@@ -62,17 +62,13 @@ fi
 
 }
 
-# =====================================
-# UTIL
-# =====================================
-
-sanitize_name(){
-echo "$1" | tr ' ' '_' | tr -cd '[:alnum:]_'
-}
-
 pause(){
 echo
 read -rp "Pressione ENTER para voltar..."
+}
+
+sanitize_name(){
+echo "$1" | tr ' ' '_' | tr -cd '[:alnum:]_'
 }
 
 # =====================================
@@ -110,7 +106,6 @@ ffmpeg -re -loglevel warning \
 -hls_flags delete_segments \
 "$HLS/$NAME.m3u8"
 
-echo "Stream caiu, reiniciando..."
 sleep 3
 
 done
@@ -132,8 +127,6 @@ pause
 
 list_channels(){
 
-while true; do
-
 clear
 echo "CANAIS DISPONÍVEIS"
 echo "------------------"
@@ -143,13 +136,7 @@ for FILE in "$HLS"/*.m3u8; do
 basename "$FILE" .m3u8
 done
 
-echo
-echo "0) Voltar"
-
-read OP
-[ "$OP" = "0" ] && return
-
-done
+pause
 
 }
 
@@ -160,14 +147,11 @@ done
 remove_channel(){
 
 clear
-echo "REMOVER CANAL"
-
 read -rp "Nome do canal: " NAME
 
 rm -f "$HLS/$NAME.m3u8"
 rm -f "$HLS/$NAME"*.ts
 
-echo
 echo "Canal removido"
 
 pause
@@ -185,16 +169,11 @@ read -rp "Nome do canal: " NAME
 PID="${STREAMS[$NAME]}"
 
 if [ -n "$PID" ]; then
-
 kill "$PID"
 unset STREAMS["$NAME"]
-
 echo "Canal parado"
-
 else
-
 echo "Canal não encontrado"
-
 fi
 
 pause
@@ -202,47 +181,130 @@ pause
 }
 
 # =====================================
-# DASHBOARD
+# ATIVAR CANAL
 # =====================================
 
-dashboard(){
-
-while true; do
+activate_channel(){
 
 clear
+read -rp "Nome do canal: " NAME
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " DASHBOARD IPTV"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo
+FILE="$HLS/$NAME.m3u8"
 
-echo "Streams ativas: ${#STREAMS[@]}"
-echo
-
-for NAME in "${!STREAMS[@]}"; do
+if [ ! -f "$FILE" ]; then
+echo "Canal não existe"
+pause
+return
+fi
 
 PID="${STREAMS[$NAME]}"
 
-if ps -p "$PID" >/dev/null 2>&1; then
+if [ -n "$PID" ] && ps -p "$PID" >/dev/null 2>&1; then
+echo "Canal já está ativo"
+pause
+return
+fi
 
-TIME=$(ps -p "$PID" -o etime=)
-echo "▶ $NAME ON ($TIME)"
+echo "Reativando canal..."
 
-else
+(
+while true; do
 
-echo "✖ $NAME OFF"
+ffmpeg -re -loglevel warning \
+-stream_loop -1 \
+-i "$FILE" \
+-c copy \
+-f hls \
+-hls_time 4 \
+-hls_list_size 6 \
+-hls_flags delete_segments \
+"$HLS/$NAME.m3u8"
+
+sleep 3
+
+done
+) &
+
+STREAMS["$NAME"]=$!
+
+pause
+
+}
+
+# =====================================
+# ATIVAR TODOS
+# =====================================
+
+activate_all(){
+
+clear
+echo "Ativando todos canais..."
+
+for FILE in "$HLS"/*.m3u8; do
+
+[ -f "$FILE" ] || continue
+
+NAME=$(basename "$FILE" .m3u8)
+
+PID="${STREAMS[$NAME]}"
+
+if [ -z "$PID" ] || ! ps -p "$PID" >/dev/null 2>&1; then
+
+echo "Iniciando $NAME"
+
+(
+while true; do
+
+ffmpeg -re \
+-stream_loop -1 \
+-i "$FILE" \
+-c copy \
+-f hls \
+-hls_time 4 \
+-hls_list_size 6 \
+-hls_flags delete_segments \
+"$HLS/$NAME.m3u8"
+
+sleep 3
+
+done
+) &
+
+STREAMS["$NAME"]=$!
 
 fi
 
 done
 
-echo
-echo "0) Voltar"
+pause
 
-read OP
-[ "$OP" = "0" ] && return
+}
+
+# =====================================
+# CANAIS OFF
+# =====================================
+
+show_off_channels(){
+
+clear
+echo "CANAIS OFF"
+echo "-----------"
+
+for FILE in "$HLS"/*.m3u8; do
+
+[ -f "$FILE" ] || continue
+
+NAME=$(basename "$FILE" .m3u8)
+
+PID="${STREAMS[$NAME]}"
+
+if ! ps -p "$PID" >/dev/null 2>&1; then
+echo "$NAME"
+fi
 
 done
+
+pause
 
 }
 
@@ -276,178 +338,6 @@ pause
 }
 
 # =====================================
-# STATUS SERVIDOR
-# =====================================
-
-server_status(){
-
-while true; do
-
-clear
-echo "STATUS DO SERVIDOR"
-echo
-
-top -bn1 | grep Cpu
-echo
-free -h
-echo
-df -h /
-
-echo
-echo "0) Voltar"
-
-read OP
-[ "$OP" = "0" ] && return
-
-done
-
-}
-
-# =====================================
-# MONITOR RAM
-# =====================================
-
-monitor_ram(){
-
-while true; do
-
-clear
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " MONITOR DE RAM"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo
-
-free -h
-
-echo
-echo "Processos que mais usam RAM:"
-ps -eo pid,cmd,%mem,%cpu --sort=-%mem | head
-
-echo
-echo "0) Voltar"
-
-read OP
-[ "$OP" = "0" ] && return
-
-done
-
-}
-
-# =====================================
-# MONITOR INTERNET
-# =====================================
-
-monitor_net(){
-
-while true; do
-
-clear
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " MONITOR DE INTERNET"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo
-
-vnstat --oneline
-
-echo
-echo "Tráfego em tempo real:"
-IFACE=$(ip route | awk '/default/ {print $5}')
-vnstat -l -i "$IFACE"
-
-echo
-echo "0) Voltar"
-
-read OP
-[ "$OP" = "0" ] && return
-
-done
-
-}
-
-# =====================================
-# LINKS STREAM
-# =====================================
-
-show_links(){
-
-while true; do
-
-clear
-
-IP=$(hostname -I | awk '{print $1}')
-
-echo "LINKS DOS CANAIS"
-echo
-
-for FILE in "$HLS"/*.m3u8; do
-
-[ -f "$FILE" ] || continue
-
-NAME=$(basename "$FILE" .m3u8)
-
-echo "$NAME"
-echo "http://$IP:8080/$NAME.m3u8"
-echo
-
-done
-
-echo "0) Voltar"
-
-read OP
-[ "$OP" = "0" ] && return
-
-done
-
-}
-
-# =====================================
-# LIMPAR SEGMENTOS
-# =====================================
-
-clean_segments(){
-
-find "$HLS" -name "*.ts" -type f -mmin +10 -delete
-
-echo "Segmentos antigos removidos"
-
-pause
-
-}
-
-# =====================================
-# BACKUP
-# =====================================
-
-backup(){
-
-tar -czf "$BASE/backup.tar.gz" "$BASE"
-
-echo
-echo "Backup criado:"
-echo "$BASE/backup.tar.gz"
-
-pause
-
-}
-
-# =====================================
-# REINICIAR HLS
-# =====================================
-
-restart_hls(){
-
-pkill -f "http.server"
-
-cd "$HLS"
-python3 -m http.server 8080 &
-
-echo "Servidor reiniciado"
-
-pause
-
-}
-
-# =====================================
 # MENU
 # =====================================
 
@@ -460,22 +350,23 @@ while true; do
 clear
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " IPTV PRO SERVER v3"
+echo " IPTV PRO SERVER"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 echo "1) Adicionar canal YouTube"
 echo "2) Parar canal"
-echo "3) Dashboard"
-echo "4) Exportar playlist"
-echo "5) Limpar segmentos"
-echo "6) Backup"
-echo "7) Listar canais"
-echo "8) Remover canal"
-echo "9) Status do servidor"
-echo "10) Ver links dos canais"
-echo "11) Reiniciar servidor HLS"
-echo "12) Monitor RAM"
-echo "13) Monitor Internet"
+echo "3) Exportar playlist"
+echo "4) Limpar segmentos"
+echo "5) Backup"
+echo "6) Listar canais"
+echo "7) Remover canal"
+echo "8) Ver links dos canais"
+echo "9) Reiniciar servidor HLS"
+echo "10) Monitor RAM"
+echo "11) Monitor Internet"
+echo "12) Ativar canal"
+echo "13) Ativar todos canais"
+echo "14) Mostrar canais OFF"
 echo "0) Sair"
 echo
 
@@ -485,17 +376,16 @@ case "$OP" in
 
 1) add_youtube ;;
 2) stop_stream ;;
-3) dashboard ;;
-4) export_playlist ;;
-5) clean_segments ;;
-6) backup ;;
-7) list_channels ;;
-8) remove_channel ;;
-9) server_status ;;
-10) show_links ;;
-11) restart_hls ;;
-12) monitor_ram ;;
-13) monitor_net ;;
+3) export_playlist ;;
+6) list_channels ;;
+7) remove_channel ;;
+8) show_links ;;
+9) restart_hls ;;
+10) free -h ; pause ;;
+11) vnstat ; pause ;;
+12) activate_channel ;;
+13) activate_all ;;
+14) show_off_channels ;;
 0) exit ;;
 
 esac
