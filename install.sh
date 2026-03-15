@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =====================================
-# IPTV PRO SERVER — AUTO INSTALLER
+# IPTV PRO SERVER — AUTO INSTALLER v3
 # =====================================
 
 set -e
@@ -10,7 +10,7 @@ BASE="/root/iptv_pro"
 BIN="/usr/local/bin/menu"
 
 echo "================================="
-echo " IPTV PRO SERVER INSTALLER"
+echo " IPTV PRO SERVER INSTALLER v3"
 echo "================================="
 
 if [ "$EUID" -ne 0 ]; then
@@ -33,7 +33,7 @@ chmod +x /usr/local/bin/yt-dlp
 
 mkdir -p "$BASE/hls"
 
-echo "[+] Criando sistema IPTV..."
+echo "[+] Criando menu IPTV..."
 
 cat > "$BIN" << 'EOF'
 #!/usr/bin/env bash
@@ -46,31 +46,51 @@ mkdir -p "$HLS"
 
 declare -A STREAMS
 
-start_server(){
+# =====================================
+# SERVER HLS
+# =====================================
+
+start_server() {
 
 if ! pgrep -f "http.server 8080" >/dev/null; then
 
 cd "$HLS"
+
 python3 -m http.server 8080 >/dev/null 2>&1 &
+
+echo "Servidor HLS iniciado na porta 8080"
 
 fi
 
 }
 
-sanitize_name(){
+# =====================================
+# UTIL
+# =====================================
+
+sanitize_name() {
+
 echo "$1" | tr ' ' '_' | tr -cd '[:alnum:]_'
+
 }
 
 pause(){
+
 echo
-read -rp "Pressione ENTER..."
+read -rp "Pressione ENTER para voltar..."
+
 }
+
+# =====================================
+# ADD YOUTUBE
+# =====================================
 
 add_youtube(){
 
 clear
 
 read -rp "Nome do canal: " NAME
+
 NAME=$(sanitize_name "$NAME")
 
 read -rp "Link YouTube: " LINK
@@ -106,11 +126,76 @@ done
 
 STREAMS["$NAME"]=$!
 
-echo "Canal iniciado!"
+echo
+echo "Canal adicionado!"
 
 pause
 
 }
+
+# =====================================
+# LISTAR CANAIS
+# =====================================
+
+list_channels(){
+
+while true; do
+
+clear
+
+echo "CANAIS DISPONÍVEIS"
+echo "------------------"
+
+for FILE in "$HLS"/*.m3u8; do
+[ -f "$FILE" ] || continue
+basename "$FILE" .m3u8
+done
+
+echo
+echo "0) Voltar"
+
+read OP
+
+[ "$OP" = "0" ] && return
+
+done
+
+}
+
+# =====================================
+# REMOVER CANAL
+# =====================================
+
+remove_channel(){
+
+while true; do
+
+clear
+
+echo "REMOVER CANAL"
+
+read -rp "Nome do canal: " NAME
+
+rm -f "$HLS/$NAME.m3u8"
+rm -f "$HLS/$NAME"*.ts
+
+echo
+echo "Canal removido"
+
+echo
+echo "0) Voltar"
+
+read OP
+
+[ "$OP" = "0" ] && return
+
+done
+
+}
+
+# =====================================
+# PARAR STREAM
+# =====================================
 
 stop_stream(){
 
@@ -119,45 +204,26 @@ read -rp "Nome do canal: " NAME
 PID="${STREAMS[$NAME]}"
 
 if [ -n "$PID" ]; then
+
 kill "$PID"
+
 unset STREAMS["$NAME"]
+
 echo "Canal parado"
+
 else
+
 echo "Canal não encontrado"
+
 fi
 
 pause
 
 }
 
-list_channels(){
-
-clear
-
-echo "CANAIS"
-echo "------"
-
-for FILE in "$HLS"/*.m3u8; do
-[ -f "$FILE" ] || continue
-basename "$FILE" .m3u8
-done
-
-pause
-
-}
-
-remove_channel(){
-
-read -rp "Nome do canal: " NAME
-
-rm -f "$HLS/$NAME.m3u8"
-rm -f "$HLS/$NAME"*.ts
-
-echo "Canal removido"
-
-pause
-
-}
+# =====================================
+# DASHBOARD
+# =====================================
 
 dashboard(){
 
@@ -165,9 +231,11 @@ while true; do
 
 clear
 
-echo "DASHBOARD IPTV"
-echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo " DASHBOARD IPTV"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+echo
 echo "Streams ativas: ${#STREAMS[@]}"
 echo
 
@@ -176,22 +244,33 @@ for NAME in "${!STREAMS[@]}"; do
 PID="${STREAMS[$NAME]}"
 
 if ps -p "$PID" >/dev/null 2>&1; then
-echo "$NAME ONLINE"
+
+TIME=$(ps -p "$PID" -o etime=)
+
+echo "▶ $NAME ON ($TIME)"
+
 else
-echo "$NAME OFFLINE"
+
+echo "✖ $NAME OFF"
+
 fi
 
 done
 
 echo
-echo "0 voltar"
+echo "0) Voltar"
 
 read OP
+
 [ "$OP" = "0" ] && return
 
 done
 
 }
+
+# =====================================
+# EXPORT PLAYLIST
+# =====================================
 
 export_playlist(){
 
@@ -200,6 +279,7 @@ IP=$(hostname -I | awk '{print $1}')
 echo "#EXTM3U" > "$PLAYLIST"
 
 for FILE in "$HLS"/*.m3u8; do
+
 [ -f "$FILE" ] || continue
 
 NAME=$(basename "$FILE" .m3u8)
@@ -209,6 +289,7 @@ echo "http://$IP:8080/$NAME.m3u8" >> "$PLAYLIST"
 
 done
 
+echo
 echo "Playlist criada:"
 echo "$PLAYLIST"
 
@@ -216,84 +297,98 @@ pause
 
 }
 
+# =====================================
+# STATUS SERVIDOR
+# =====================================
+
 server_status(){
+
+while true; do
 
 clear
 
-echo "CPU"
+echo "STATUS DO SERVIDOR"
+echo
+
 top -bn1 | grep Cpu
 
 echo
-echo "RAM"
 free -h
 
 echo
-echo "DISCO"
 df -h /
 
-pause
+echo
+echo "0) Voltar"
 
-}
+read OP
 
-monitor_ram(){
+[ "$OP" = "0" ] && return
 
-while true; do
-clear
-echo "USO DE RAM"
-free -h
-sleep 2
 done
 
 }
 
-monitor_net(){
-
-while true; do
-clear
-echo "CONSUMO INTERNET"
-vnstat -l
-sleep 1
-done
-
-}
+# =====================================
+# LINKS STREAM
+# =====================================
 
 show_links(){
+
+while true; do
 
 clear
 
 IP=$(hostname -I | awk '{print $1}')
 
-echo "LINKS"
+echo "LINKS DOS CANAIS"
+echo
 
 for FILE in "$HLS"/*.m3u8; do
+
 [ -f "$FILE" ] || continue
 
 NAME=$(basename "$FILE" .m3u8)
 
-echo
 echo "$NAME"
 echo "http://$IP:8080/$NAME.m3u8"
+echo
 
 done
 
-pause
+echo "0) Voltar"
+
+read OP
+
+[ "$OP" = "0" ] && return
+
+done
 
 }
+
+# =====================================
+# LIMPAR SEGMENTOS
+# =====================================
 
 clean_segments(){
 
 find "$HLS" -name "*.ts" -type f -mmin +10 -delete
 
-echo "Segmentos limpos"
+echo "Segmentos antigos removidos"
 
 pause
 
 }
 
+# =====================================
+# BACKUP
+# =====================================
+
 backup(){
 
 tar -czf "$BASE/backup.tar.gz" "$BASE"
 
+echo
 echo "Backup criado:"
 echo "$BASE/backup.tar.gz"
 
@@ -301,9 +396,13 @@ pause
 
 }
 
+# =====================================
+# REINICIAR HLS
+# =====================================
+
 restart_hls(){
 
-pkill -f http.server
+pkill -f "http.server"
 
 cd "$HLS"
 
@@ -315,6 +414,10 @@ pause
 
 }
 
+# =====================================
+# MENU
+# =====================================
+
 menu(){
 
 start_server
@@ -323,24 +426,22 @@ while true; do
 
 clear
 
-echo "━━━━━━━━━━━━━━━━━━━━"
-echo " IPTV PRO SERVER"
-echo "━━━━━━━━━━━━━━━━━━━━"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo " IPTV PRO SERVER v3"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
-echo "1 Adicionar canal YouTube"
-echo "2 Parar canal"
-echo "3 Dashboard"
-echo "4 Exportar playlist"
-echo "5 Limpar segmentos"
-echo "6 Backup"
-echo "7 Listar canais"
-echo "8 Remover canal"
-echo "9 Status servidor"
-echo "10 Ver links"
-echo "11 Reiniciar HLS"
-echo "12 Monitor RAM"
-echo "13 Monitor Internet"
-echo "0 Sair"
+echo "1) Adicionar canal YouTube"
+echo "2) Parar canal"
+echo "3) Dashboard"
+echo "4) Exportar playlist"
+echo "5) Limpar segmentos"
+echo "6) Backup"
+echo "7) Listar canais"
+echo "8) Remover canal"
+echo "9) Status do servidor"
+echo "10) Ver links dos canais"
+echo "11) Reiniciar servidor HLS"
+echo "0) Sair"
 echo
 
 read -rp "Opção: " OP
@@ -358,8 +459,6 @@ case "$OP" in
 9) server_status ;;
 10) show_links ;;
 11) restart_hls ;;
-12) monitor_ram ;;
-13) monitor_net ;;
 0) exit ;;
 
 esac
@@ -375,9 +474,10 @@ chmod +x "$BIN"
 
 echo
 echo "================================="
-echo " INSTALAÇÃO CONCLUÍDA"
+echo " INSTALAÇÃO CONCLUÍDA ✅"
 echo "================================="
 echo
-echo "Digite:"
+echo "Digite no terminal:"
 echo
 echo "menu"
+echo
