@@ -26,9 +26,7 @@ echo "[+] Instalando dependências..."
 apt install -y ffmpeg curl wget git python3 python3-pip vnstat
 
 echo "[+] Instalando yt-dlp..."
-curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
--o /usr/local/bin/yt-dlp
-
+curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
 chmod +x /usr/local/bin/yt-dlp
 
 mkdir -p "$BASE/hls"
@@ -120,6 +118,28 @@ pause
 }
 
 # =====================================
+# PARAR STREAM
+# =====================================
+
+stop_stream(){
+
+read -rp "Nome do canal: " NAME
+
+PID="${STREAMS[$NAME]}"
+
+if [ -n "$PID" ]; then
+kill "$PID"
+unset STREAMS["$NAME"]
+echo "Canal parado"
+else
+echo "Canal não encontrado"
+fi
+
+pause
+
+}
+
+# =====================================
 # LISTAR CANAIS
 # =====================================
 
@@ -151,28 +171,6 @@ rm -f "$HLS/$NAME.m3u8"
 rm -f "$HLS/$NAME"*.ts
 
 echo "Canal removido"
-
-pause
-
-}
-
-# =====================================
-# PARAR STREAM
-# =====================================
-
-stop_stream(){
-
-read -rp "Nome do canal: " NAME
-
-PID="${STREAMS[$NAME]}"
-
-if [ -n "$PID" ]; then
-kill "$PID"
-unset STREAMS["$NAME"]
-echo "Canal parado"
-else
-echo "Canal não encontrado"
-fi
 
 pause
 
@@ -307,15 +305,40 @@ pause
 }
 
 # =====================================
+# TEMPO ONLINE DOS CANAIS
+# =====================================
+
+show_uptime(){
+
+clear
+echo "TEMPO ONLINE DOS CANAIS"
+echo "-----------------------"
+
+for NAME in "${!STREAMS[@]}"; do
+
+PID="${STREAMS[$NAME]}"
+
+if ps -p "$PID" >/dev/null 2>&1; then
+TIME=$(ps -p "$PID" -o etime=)
+echo "▶ $NAME | ONLINE | $TIME"
+else
+echo "✖ $NAME | OFFLINE"
+fi
+
+done
+
+pause
+
+}
+
+# =====================================
 # LIMPAR SEGMENTOS
 # =====================================
 
 clean_segments(){
 
 find "$HLS" -name "*.ts" -type f -mmin +10 -delete
-
 echo "Segmentos antigos removidos"
-
 pause
 
 }
@@ -327,11 +350,7 @@ pause
 backup(){
 
 tar -czf "$BASE/backup.tar.gz" "$BASE"
-
-echo
-echo "Backup criado:"
-echo "$BASE/backup.tar.gz"
-
+echo "Backup criado em $BASE/backup.tar.gz"
 pause
 
 }
@@ -343,12 +362,9 @@ pause
 restart_hls(){
 
 pkill -f "http.server"
-
 cd "$HLS"
 python3 -m http.server 8080 >/dev/null 2>&1 &
-
 echo "Servidor reiniciado"
-
 pause
 
 }
@@ -360,7 +376,6 @@ pause
 show_links(){
 
 clear
-
 IP=$(hostname -I | awk '{print $1}')
 
 echo "LINKS DOS CANAIS"
@@ -369,7 +384,6 @@ echo
 for FILE in "$HLS"/*.m3u8; do
 
 [ -f "$FILE" ] || continue
-
 NAME=$(basename "$FILE" .m3u8)
 
 echo "$NAME"
@@ -378,6 +392,31 @@ echo
 
 done
 
+pause
+
+}
+
+# =====================================
+# EXPORT PLAYLIST
+# =====================================
+
+export_playlist(){
+
+IP=$(hostname -I | awk '{print $1}')
+
+echo "#EXTM3U" > "$PLAYLIST"
+
+for FILE in "$HLS"/*.m3u8; do
+
+[ -f "$FILE" ] || continue
+NAME=$(basename "$FILE" .m3u8)
+
+echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
+echo "http://$IP:8080/$NAME.m3u8" >> "$PLAYLIST"
+
+done
+
+echo "Playlist criada em $PLAYLIST"
 pause
 
 }
@@ -412,6 +451,7 @@ echo "11) Monitor Internet"
 echo "12) Ativar canal"
 echo "13) Ativar todos canais"
 echo "14) Mostrar canais OFF"
+echo "15) Tempo online dos canais"
 echo "0) Sair"
 echo
 
@@ -433,6 +473,7 @@ case "$OP" in
 12) activate_channel ;;
 13) activate_all ;;
 14) show_off_channels ;;
+15) show_uptime ;;
 0) exit ;;
 
 esac
