@@ -53,11 +53,9 @@ declare -A STREAMS
 start_server(){
 
 if ! pgrep -f "http.server 8080" >/dev/null; then
-
 cd "$HLS"
 python3 -m http.server 8080 >/dev/null 2>&1 &
 echo "Servidor HLS iniciado na porta 8080"
-
 fi
 
 }
@@ -210,7 +208,7 @@ echo "Reativando canal..."
 (
 while true; do
 
-ffmpeg -re -loglevel warning \
+ffmpeg -re \
 -stream_loop -1 \
 -i "$FILE" \
 -c copy \
@@ -309,14 +307,64 @@ pause
 }
 
 # =====================================
-# EXPORT PLAYLIST
+# LIMPAR SEGMENTOS
 # =====================================
 
-export_playlist(){
+clean_segments(){
+
+find "$HLS" -name "*.ts" -type f -mmin +10 -delete
+
+echo "Segmentos antigos removidos"
+
+pause
+
+}
+
+# =====================================
+# BACKUP
+# =====================================
+
+backup(){
+
+tar -czf "$BASE/backup.tar.gz" "$BASE"
+
+echo
+echo "Backup criado:"
+echo "$BASE/backup.tar.gz"
+
+pause
+
+}
+
+# =====================================
+# REINICIAR HLS
+# =====================================
+
+restart_hls(){
+
+pkill -f "http.server"
+
+cd "$HLS"
+python3 -m http.server 8080 >/dev/null 2>&1 &
+
+echo "Servidor reiniciado"
+
+pause
+
+}
+
+# =====================================
+# LINKS DOS CANAIS
+# =====================================
+
+show_links(){
+
+clear
 
 IP=$(hostname -I | awk '{print $1}')
 
-echo "#EXTM3U" > "$PLAYLIST"
+echo "LINKS DOS CANAIS"
+echo
 
 for FILE in "$HLS"/*.m3u8; do
 
@@ -324,14 +372,11 @@ for FILE in "$HLS"/*.m3u8; do
 
 NAME=$(basename "$FILE" .m3u8)
 
-echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
-echo "http://$IP:8080/$NAME.m3u8" >> "$PLAYLIST"
+echo "$NAME"
+echo "http://$IP:8080/$NAME.m3u8"
+echo
 
 done
-
-echo
-echo "Playlist criada:"
-echo "$PLAYLIST"
 
 pause
 
@@ -377,6 +422,8 @@ case "$OP" in
 1) add_youtube ;;
 2) stop_stream ;;
 3) export_playlist ;;
+4) clean_segments ;;
+5) backup ;;
 6) list_channels ;;
 7) remove_channel ;;
 8) show_links ;;
