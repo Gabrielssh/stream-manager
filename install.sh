@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =====================================
-# IPTV PRO SERVER — AUTO INSTALLER v2
+# IPTV PRO SERVER — AUTO INSTALLER v3
 # =====================================
 
 set -e
@@ -10,7 +10,7 @@ BASE="/root/iptv_pro"
 BIN="/usr/local/bin/menu"
 
 echo "================================="
-echo " IPTV PRO SERVER INSTALLER v2"
+echo " IPTV PRO SERVER INSTALLER v3"
 echo "================================="
 
 if [ "$EUID" -ne 0 ]; then
@@ -23,7 +23,7 @@ echo "[+] Atualizando sistema..."
 apt update -y
 
 echo "[+] Instalando dependências..."
-apt install -y ffmpeg curl wget git python3 python3-pip
+apt install -y ffmpeg curl wget git python3 python3-pip vnstat
 
 echo "[+] Instalando yt-dlp..."
 curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
@@ -46,218 +46,424 @@ mkdir -p "$HLS"
 
 declare -A STREAMS
 
+# =====================================
+# SERVER HLS
+# =====================================
+
 start_server() {
 
-  if ! pgrep -f "http.server 8080" >/dev/null; then
-    cd "$HLS"
-    python3 -m http.server 8080 >/dev/null 2>&1 &
-    SERVER_PID=$!
-    echo "Servidor HLS iniciado na porta 8080"
-  fi
+if ! pgrep -f "http.server 8080" >/dev/null; then
+
+cd "$HLS"
+
+python3 -m http.server 8080 >/dev/null 2>&1 &
+
+echo "Servidor HLS iniciado na porta 8080"
+
+fi
 
 }
+
+# =====================================
+# UTIL
+# =====================================
 
 sanitize_name() {
-  echo "$1" | tr ' ' '_' | tr -cd '[:alnum:]_'
-}
 
-add_youtube() {
-
-  read -rp "Nome do canal: " NAME
-  NAME=$(sanitize_name "$NAME")
-
-  if [ -f "$HLS/$NAME.m3u8" ]; then
-    echo "Canal já existe."
-    read
-    return
-  fi
-
-  read -rp "Link YouTube: " LINK
-
-  (
-    while true; do
-
-      URL=$(yt-dlp -f best -g "$LINK" 2>/dev/null)
-
-      if [ -z "$URL" ]; then
-        echo "Erro ao obter stream..."
-        sleep 5
-        continue
-      fi
-
-      ffmpeg -re -loglevel warning \
-      -i "$URL" \
-      -c:v copy \
-      -c:a aac \
-      -f hls \
-      -hls_time 4 \
-      -hls_list_size 6 \
-      -hls_flags delete_segments \
-      "$HLS/$NAME.m3u8"
-
-      echo "Stream caiu... reiniciando"
-      sleep 3
-
-    done
-  ) &
-
-  STREAMS["$NAME"]=$!
+echo "$1" | tr ' ' '_' | tr -cd '[:alnum:]_'
 
 }
 
-stop_stream() {
+pause(){
 
-  read -rp "Nome do canal: " NAME
-
-  PID="${STREAMS[$NAME]}"
-
-  if [ -n "$PID" ]; then
-    kill "$PID" 2>/dev/null
-    unset STREAMS["$NAME"]
-    echo "Canal parado."
-  else
-    echo "Canal não encontrado."
-  fi
-
-  read
+echo
+read -rp "Pressione ENTER para voltar..."
 
 }
 
-restart_stream() {
+# =====================================
+# ADD YOUTUBE
+# =====================================
 
-  read -rp "Nome do canal: " NAME
+add_youtube(){
 
-  PID="${STREAMS[$NAME]}"
+clear
 
-  if [ -n "$PID" ]; then
-    kill "$PID"
-    unset STREAMS["$NAME"]
-    echo "Reinicie adicionando novamente."
-  fi
+read -rp "Nome do canal: " NAME
 
-  read
+NAME=$(sanitize_name "$NAME")
 
-}
+read -rp "Link YouTube: " LINK
 
-clean_streams() {
+(
 
-  find "$HLS" -name "*.ts" -type f -mmin +10 -delete
-  echo "Segmentos antigos removidos."
+while true; do
 
-  read
+URL=$(yt-dlp -f best -g "$LINK" 2>/dev/null)
 
-}
+if [ -z "$URL" ]; then
+echo "Erro ao obter stream"
+sleep 5
+continue
+fi
 
-export_playlist() {
+ffmpeg -re -loglevel warning \
+-i "$URL" \
+-c:v copy \
+-c:a aac \
+-f hls \
+-hls_time 4 \
+-hls_list_size 6 \
+-hls_flags delete_segments \
+"$HLS/$NAME.m3u8"
 
-  IP=$(hostname -I | awk '{print $1}')
+echo "Stream caiu, reiniciando..."
+sleep 3
 
-  echo "#EXTM3U" > "$PLAYLIST"
+done
 
-  for FILE in "$HLS"/*.m3u8; do
+) &
 
-    [ -f "$FILE" ] || continue
+STREAMS["$NAME"]=$!
 
-    NAME=$(basename "$FILE" .m3u8)
+echo
+echo "Canal adicionado!"
 
-    echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
-    echo "http://$IP:8080/$NAME.m3u8" >> "$PLAYLIST"
-
-  done
-
-  echo
-  echo "Playlist criada:"
-  echo "$PLAYLIST"
-
-  read
-
-}
-
-dashboard() {
-
-  while true; do
-
-    clear
-
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo " IPTV PRO SERVER DASHBOARD"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-    echo
-    echo "Streams ativas: ${#STREAMS[@]}"
-    echo
-
-    for NAME in "${!STREAMS[@]}"; do
-
-      PID="${STREAMS[$NAME]}"
-
-      if ps -p "$PID" >/dev/null 2>&1; then
-
-        TIME=$(ps -p "$PID" -o etime=)
-
-        echo "▶ $NAME ON ($TIME)"
-
-      else
-
-        echo "✖ $NAME OFF"
-
-      fi
-
-    done
-
-    sleep 3
-
-  done
+pause
 
 }
 
-backup() {
+# =====================================
+# LISTAR CANAIS
+# =====================================
 
-  tar -czf "$BASE/backup.tar.gz" "$BASE"
+list_channels(){
 
-  echo "Backup criado:"
-  echo "$BASE/backup.tar.gz"
+while true; do
 
-  read
+clear
+
+echo "CANAIS DISPONÍVEIS"
+echo "------------------"
+
+for FILE in "$HLS"/*.m3u8; do
+[ -f "$FILE" ] || continue
+basename "$FILE" .m3u8
+done
+
+echo
+echo "0) Voltar"
+
+read OP
+
+[ "$OP" = "0" ] && return
+
+done
 
 }
 
-menu() {
+# =====================================
+# REMOVER CANAL
+# =====================================
 
-  start_server
+remove_channel(){
 
-  while true; do
+while true; do
 
-    clear
+clear
 
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo " IPTV PRO SERVER v2"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo
-    echo "1) Adicionar canal YouTube"
-    echo "2) Parar canal"
-    echo "3) Reiniciar canal"
-    echo "4) Dashboard"
-    echo "5) Exportar playlist"
-    echo "6) Limpar segmentos"
-    echo "7) Backup"
-    echo "0) Sair"
-    echo
+echo "REMOVER CANAL"
 
-    read -rp "Opção: " OP
+read -rp "Nome do canal: " NAME
 
-    case "$OP" in
-      1) add_youtube ;;
-      2) stop_stream ;;
-      3) restart_stream ;;
-      4) dashboard ;;
-      5) export_playlist ;;
-      6) clean_streams ;;
-      7) backup ;;
-      0) exit ;;
-    esac
+rm -f "$HLS/$NAME.m3u8"
+rm -f "$HLS/$NAME"*.ts
 
-  done
+echo
+echo "Canal removido"
+
+echo
+echo "0) Voltar"
+
+read OP
+
+[ "$OP" = "0" ] && return
+
+done
+
+}
+
+# =====================================
+# PARAR STREAM
+# =====================================
+
+stop_stream(){
+
+read -rp "Nome do canal: " NAME
+
+PID="${STREAMS[$NAME]}"
+
+if [ -n "$PID" ]; then
+
+kill "$PID"
+
+unset STREAMS["$NAME"]
+
+echo "Canal parado"
+
+else
+
+echo "Canal não encontrado"
+
+fi
+
+pause
+
+}
+
+# =====================================
+# DASHBOARD
+# =====================================
+
+dashboard(){
+
+while true; do
+
+clear
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo " DASHBOARD IPTV"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+echo
+echo "Streams ativas: ${#STREAMS[@]}"
+echo
+
+for NAME in "${!STREAMS[@]}"; do
+
+PID="${STREAMS[$NAME]}"
+
+if ps -p "$PID" >/dev/null 2>&1; then
+
+TIME=$(ps -p "$PID" -o etime=)
+
+echo "▶ $NAME ON ($TIME)"
+
+else
+
+echo "✖ $NAME OFF"
+
+fi
+
+done
+
+echo
+echo "0) Voltar"
+
+read OP
+
+[ "$OP" = "0" ] && return
+
+done
+
+}
+
+# =====================================
+# EXPORT PLAYLIST
+# =====================================
+
+export_playlist(){
+
+IP=$(hostname -I | awk '{print $1}')
+
+echo "#EXTM3U" > "$PLAYLIST"
+
+for FILE in "$HLS"/*.m3u8; do
+
+[ -f "$FILE" ] || continue
+
+NAME=$(basename "$FILE" .m3u8)
+
+echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
+echo "http://$IP:8080/$NAME.m3u8" >> "$PLAYLIST"
+
+done
+
+echo
+echo "Playlist criada:"
+echo "$PLAYLIST"
+
+pause
+
+}
+
+# =====================================
+# STATUS SERVIDOR
+# =====================================
+
+server_status(){
+
+while true; do
+
+clear
+
+echo "STATUS DO SERVIDOR"
+echo
+
+top -bn1 | grep Cpu
+
+echo
+free -h
+
+echo
+df -h /
+
+echo
+echo "0) Voltar"
+
+read OP
+
+[ "$OP" = "0" ] && return
+
+done
+
+}
+
+# =====================================
+# LINKS STREAM
+# =====================================
+
+show_links(){
+
+while true; do
+
+clear
+
+IP=$(hostname -I | awk '{print $1}')
+
+echo "LINKS DOS CANAIS"
+echo
+
+for FILE in "$HLS"/*.m3u8; do
+
+[ -f "$FILE" ] || continue
+
+NAME=$(basename "$FILE" .m3u8)
+
+echo "$NAME"
+echo "http://$IP:8080/$NAME.m3u8"
+echo
+
+done
+
+echo "0) Voltar"
+
+read OP
+
+[ "$OP" = "0" ] && return
+
+done
+
+}
+
+# =====================================
+# LIMPAR SEGMENTOS
+# =====================================
+
+clean_segments(){
+
+find "$HLS" -name "*.ts" -type f -mmin +10 -delete
+
+echo "Segmentos antigos removidos"
+
+pause
+
+}
+
+# =====================================
+# BACKUP
+# =====================================
+
+backup(){
+
+tar -czf "$BASE/backup.tar.gz" "$BASE"
+
+echo
+echo "Backup criado:"
+echo "$BASE/backup.tar.gz"
+
+pause
+
+}
+
+# =====================================
+# REINICIAR HLS
+# =====================================
+
+restart_hls(){
+
+pkill -f "http.server"
+
+cd "$HLS"
+
+python3 -m http.server 8080 &
+
+echo "Servidor reiniciado"
+
+pause
+
+}
+
+# =====================================
+# MENU
+# =====================================
+
+menu(){
+
+start_server
+
+while true; do
+
+clear
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo " IPTV PRO SERVER v3"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+echo "1) Adicionar canal YouTube"
+echo "2) Parar canal"
+echo "3) Dashboard"
+echo "4) Exportar playlist"
+echo "5) Limpar segmentos"
+echo "6) Backup"
+echo "7) Listar canais"
+echo "8) Remover canal"
+echo "9) Status do servidor"
+echo "10) Ver links dos canais"
+echo "11) Reiniciar servidor HLS"
+echo "0) Sair"
+echo
+
+read -rp "Opção: " OP
+
+case "$OP" in
+
+1) add_youtube ;;
+2) stop_stream ;;
+3) dashboard ;;
+4) export_playlist ;;
+5) clean_segments ;;
+6) backup ;;
+7) list_channels ;;
+8) remove_channel ;;
+9) server_status ;;
+10) show_links ;;
+11) restart_hls ;;
+0) exit ;;
+
+esac
+
+done
 
 }
 
