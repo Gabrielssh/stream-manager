@@ -183,7 +183,14 @@ pause
 activate_channel(){
 
 clear
+echo "ATIVAR CANAL"
+echo
+echo "Digite 0 para voltar"
+echo
+
 read -rp "Nome do canal: " NAME
+
+[ "$NAME" = "0" ] && return
 
 FILE="$HLS/$NAME.m3u8"
 
@@ -234,7 +241,18 @@ pause
 activate_all(){
 
 clear
-echo "Ativando todos canais..."
+echo "ATIVAR TODOS CANAIS"
+echo
+echo "1) Confirmar"
+echo "0) Voltar"
+echo
+
+read -rp "Opção: " OP
+
+[ "$OP" = "0" ] && return
+
+echo
+echo "Iniciando canais..."
 
 for FILE in "$HLS"/*.m3u8; do
 
@@ -305,7 +323,7 @@ pause
 }
 
 # =====================================
-# TEMPO ONLINE DOS CANAIS
+# TEMPO ONLINE
 # =====================================
 
 show_uptime(){
@@ -336,11 +354,9 @@ pause
 # =====================================
 
 clean_segments(){
-
 find "$HLS" -name "*.ts" -type f -mmin +10 -delete
 echo "Segmentos antigos removidos"
 pause
-
 }
 
 # =====================================
@@ -348,11 +364,9 @@ pause
 # =====================================
 
 backup(){
-
 tar -czf "$BASE/backup.tar.gz" "$BASE"
 echo "Backup criado em $BASE/backup.tar.gz"
 pause
-
 }
 
 # =====================================
@@ -360,13 +374,11 @@ pause
 # =====================================
 
 restart_hls(){
-
 pkill -f "http.server"
 cd "$HLS"
 python3 -m http.server 8080 >/dev/null 2>&1 &
 echo "Servidor reiniciado"
 pause
-
 }
 
 # =====================================
