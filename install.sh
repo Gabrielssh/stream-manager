@@ -50,14 +50,12 @@ declare -A STREAMS
 # SERVER HLS
 # =====================================
 
-start_server() {
+start_server(){
 
 if ! pgrep -f "http.server 8080" >/dev/null; then
 
 cd "$HLS"
-
 python3 -m http.server 8080 >/dev/null 2>&1 &
-
 echo "Servidor HLS iniciado na porta 8080"
 
 fi
@@ -68,17 +66,13 @@ fi
 # UTIL
 # =====================================
 
-sanitize_name() {
-
+sanitize_name(){
 echo "$1" | tr ' ' '_' | tr -cd '[:alnum:]_'
-
 }
 
 pause(){
-
 echo
 read -rp "Pressione ENTER para voltar..."
-
 }
 
 # =====================================
@@ -90,7 +84,6 @@ add_youtube(){
 clear
 
 read -rp "Nome do canal: " NAME
-
 NAME=$(sanitize_name "$NAME")
 
 read -rp "Link YouTube: " LINK
@@ -142,7 +135,6 @@ list_channels(){
 while true; do
 
 clear
-
 echo "CANAIS DISPONÍVEIS"
 echo "------------------"
 
@@ -155,7 +147,6 @@ echo
 echo "0) Voltar"
 
 read OP
-
 [ "$OP" = "0" ] && return
 
 done
@@ -168,10 +159,7 @@ done
 
 remove_channel(){
 
-while true; do
-
 clear
-
 echo "REMOVER CANAL"
 
 read -rp "Nome do canal: " NAME
@@ -182,14 +170,7 @@ rm -f "$HLS/$NAME"*.ts
 echo
 echo "Canal removido"
 
-echo
-echo "0) Voltar"
-
-read OP
-
-[ "$OP" = "0" ] && return
-
-done
+pause
 
 }
 
@@ -206,7 +187,6 @@ PID="${STREAMS[$NAME]}"
 if [ -n "$PID" ]; then
 
 kill "$PID"
-
 unset STREAMS["$NAME"]
 
 echo "Canal parado"
@@ -234,8 +214,8 @@ clear
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " DASHBOARD IPTV"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
 echo
+
 echo "Streams ativas: ${#STREAMS[@]}"
 echo
 
@@ -246,7 +226,6 @@ PID="${STREAMS[$NAME]}"
 if ps -p "$PID" >/dev/null 2>&1; then
 
 TIME=$(ps -p "$PID" -o etime=)
-
 echo "▶ $NAME ON ($TIME)"
 
 else
@@ -261,7 +240,6 @@ echo
 echo "0) Voltar"
 
 read OP
-
 [ "$OP" = "0" ] && return
 
 done
@@ -306,15 +284,12 @@ server_status(){
 while true; do
 
 clear
-
 echo "STATUS DO SERVIDOR"
 echo
 
 top -bn1 | grep Cpu
-
 echo
 free -h
-
 echo
 df -h /
 
@@ -322,7 +297,67 @@ echo
 echo "0) Voltar"
 
 read OP
+[ "$OP" = "0" ] && return
 
+done
+
+}
+
+# =====================================
+# MONITOR RAM
+# =====================================
+
+monitor_ram(){
+
+while true; do
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo " MONITOR DE RAM"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+
+free -h
+
+echo
+echo "Processos que mais usam RAM:"
+ps -eo pid,cmd,%mem,%cpu --sort=-%mem | head
+
+echo
+echo "0) Voltar"
+
+read OP
+[ "$OP" = "0" ] && return
+
+done
+
+}
+
+# =====================================
+# MONITOR INTERNET
+# =====================================
+
+monitor_net(){
+
+while true; do
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo " MONITOR DE INTERNET"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+
+vnstat --oneline
+
+echo
+echo "Tráfego em tempo real:"
+IFACE=$(ip route | awk '/default/ {print $5}')
+vnstat -l -i "$IFACE"
+
+echo
+echo "0) Voltar"
+
+read OP
 [ "$OP" = "0" ] && return
 
 done
@@ -359,7 +394,6 @@ done
 echo "0) Voltar"
 
 read OP
-
 [ "$OP" = "0" ] && return
 
 done
@@ -405,7 +439,6 @@ restart_hls(){
 pkill -f "http.server"
 
 cd "$HLS"
-
 python3 -m http.server 8080 &
 
 echo "Servidor reiniciado"
@@ -441,6 +474,8 @@ echo "8) Remover canal"
 echo "9) Status do servidor"
 echo "10) Ver links dos canais"
 echo "11) Reiniciar servidor HLS"
+echo "12) Monitor RAM"
+echo "13) Monitor Internet"
 echo "0) Sair"
 echo
 
@@ -459,6 +494,8 @@ case "$OP" in
 9) server_status ;;
 10) show_links ;;
 11) restart_hls ;;
+12) monitor_ram ;;
+13) monitor_net ;;
 0) exit ;;
 
 esac
