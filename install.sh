@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =====================================
-# IPTV PRO SERVER AUTO INSTALL (FULL)
+# IPTV PRO SERVER AUTO INSTALL (FINAL)
 # =====================================
 
 set -e
@@ -21,13 +21,19 @@ echo "Execute como root"
 exit 1
 fi
 
+echo "[+] Atualizando sistema..."
 apt update -y
+
+echo "[+] Instalando dependências..."
 apt install -y ffmpeg nginx curl vnstat python3
 
+echo "[+] Instalando yt-dlp..."
 curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
 -o /usr/local/bin/yt-dlp
 
 chmod +x /usr/local/bin/yt-dlp
+
+echo "[+] Criando estrutura..."
 
 mkdir -p "$HLS"
 mkdir -p "$BASE/backup"
@@ -37,28 +43,49 @@ touch "$DB"
 chown -R www-data:www-data /var/www/iptv
 chmod -R 755 /var/www/iptv
 
+# =====================================
+# CONFIGURAR NGINX (CORRIGIDO 404)
+# =====================================
+
+echo "[+] Configurando Nginx..."
+
 cat > /etc/nginx/sites-available/iptv <<EOF
 server {
-listen 8080;
-root /var/www/iptv/hls;
 
-location / {
-types {
-application/vnd.apple.mpegurl m3u8;
-video/mp2t ts;
-}
-add_header Cache-Control no-cache;
-add_header Access-Control-Allow-Origin *;
-}
+    listen 8080 default_server;
+    listen [::]:8080 default_server;
+
+    server_name _;
+
+    root /var/www/iptv/hls;
+    index index.m3u8 index.html;
+
+    location / {
+
+        autoindex on;
+
+        types {
+            application/vnd.apple.mpegurl m3u8;
+            video/mp2t ts;
+        }
+
+        add_header Cache-Control no-cache;
+        add_header Access-Control-Allow-Origin *;
+
+    }
+
 }
 EOF
 
 ln -sf /etc/nginx/sites-available/iptv /etc/nginx/sites-enabled/iptv
 rm -f /etc/nginx/sites-enabled/default
+
 nginx -t
 systemctl restart nginx
 
-# ================= MENU =================
+# =====================================
+# CRIAR MENU IPTV (DAEMON)
+# =====================================
 
 cat > "$MENU" << 'EOF'
 #!/usr/bin/env bash
@@ -211,7 +238,7 @@ menu(){
 while true; do
 clear
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " IPTV PRO SERVER (FULL)"
+echo " IPTV PRO SERVER (FINAL)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 echo "1) Adicionar canal"
@@ -264,6 +291,9 @@ echo
 echo "================================="
 echo " INSTALAÇÃO CONCLUÍDA ✅"
 echo "================================="
+echo
+echo "Agora funciona fechado terminal"
+echo "Inicia automático no reboot"
 echo
 echo "Digite:"
 echo "menu"
