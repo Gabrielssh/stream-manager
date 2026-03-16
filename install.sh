@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =====================================
-# IPTV PRO SERVER AUTO INSTALL (FINAL)
+# IPTV PRO SERVER INSTALL + MENU PRO
 # =====================================
 
 set -e
@@ -17,8 +17,8 @@ echo " IPTV PRO SERVER INSTALL"
 echo "================================="
 
 if [ "$EUID" -ne 0 ]; then
-echo "Execute como root"
-exit 1
+  echo "Execute como root"
+  exit 1
 fi
 
 echo "[+] Atualizando sistema..."
@@ -30,11 +30,9 @@ apt install -y ffmpeg nginx curl vnstat python3
 echo "[+] Instalando yt-dlp..."
 curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
 -o /usr/local/bin/yt-dlp
-
 chmod +x /usr/local/bin/yt-dlp
 
 echo "[+] Criando estrutura..."
-
 mkdir -p "$HLS"
 mkdir -p "$BASE/backup"
 mkdir -p "$BASE/logs"
@@ -43,9 +41,9 @@ touch "$DB"
 chown -R www-data:www-data /var/www/iptv
 chmod -R 755 /var/www/iptv
 
-# =====================================
-# CONFIGURAR NGINX (CORRIGIDO 404)
-# =====================================
+# ===============================
+# NGINX CONFIG (SEM 404)
+# ===============================
 
 echo "[+] Configurando Nginx..."
 
@@ -73,7 +71,6 @@ server {
         add_header Access-Control-Allow-Origin *;
 
     }
-
 }
 EOF
 
@@ -81,10 +78,11 @@ ln -sf /etc/nginx/sites-available/iptv /etc/nginx/sites-enabled/iptv
 rm -f /etc/nginx/sites-enabled/default
 
 nginx -t
+systemctl enable nginx
 systemctl restart nginx
 
 # =====================================
-# CRIAR MENU IPTV (DAEMON)
+# MENU IPTV (SERVIÇOS SYSTEMD)
 # =====================================
 
 cat > "$MENU" << 'EOF'
@@ -229,16 +227,39 @@ done
 pause
 }
 
-monitor_ram(){ free -h; pause; }
+show_viewers(){
+clear
+echo "USUÁRIOS ASSISTINDO"
+echo "--------------------"
+for FILE in "$HLS"/*.m3u8; do
+[ -f "$FILE" ] || continue
+NAME=$(basename "$FILE" .m3u8)
+COUNT=$(grep "$NAME" /var/log/nginx/access.log | awk '{print $1}' | sort | uniq | wc -l)
+echo "$NAME : $COUNT usuários"
+done
+pause
+}
 
-monitor_net(){ vnstat; pause; }
+show_mbps(){
+clear
+echo "CONSUMO EM Mbps POR CANAL"
+echo "--------------------------"
+for FILE in "$HLS"/*.m3u8; do
+[ -f "$FILE" ] || continue
+NAME=$(basename "$FILE" .m3u8)
+BYTES=$(grep "$NAME" /var/log/nginx/access.log | awk '{sum+=$10} END {print sum}')
+[ -z "$BYTES" ] && BYTES=0
+MBPS=$(awk "BEGIN {printf \"%.2f\", ($BYTES*8)/(1024*1024)}")
+echo "$NAME : $MBPS Mbps"
+done
+pause
+}
 
 menu(){
-
 while true; do
 clear
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " IPTV PRO SERVER (FINAL)"
+echo " IPTV PRO SERVER"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 echo "1) Adicionar canal"
@@ -256,10 +277,11 @@ echo "12) Ativar canal"
 echo "13) Ativar todos canais"
 echo "14) Mostrar canais OFF"
 echo "15) Tempo online canais"
+echo "16) Usuários assistindo"
+echo "17) Consumo Mbps por canal"
 echo "0) Sair"
 echo
 read -rp "Opção: " OP
-
 case "$OP" in
 1) add_channel ;;
 2) stop_channel ;;
@@ -270,15 +292,16 @@ case "$OP" in
 7) remove_channel ;;
 8) show_links ;;
 9) restart_hls ;;
-10) monitor_ram ;;
-11) monitor_net ;;
+10) free -h ; pause ;;
+11) vnstat ; pause ;;
 12) activate_channel ;;
 13) activate_all ;;
 14) show_off ;;
 15) show_uptime ;;
+16) show_viewers ;;
+17) show_mbps ;;
 0) exit ;;
 esac
-
 done
 }
 
@@ -289,12 +312,7 @@ chmod +x "$MENU"
 
 echo
 echo "================================="
-echo " INSTALAÇÃO CONCLUÍDA ✅"
+echo " INSTALAÇÃO CONCLUÍDA"
 echo "================================="
 echo
-echo "Agora funciona fechado terminal"
-echo "Inicia automático no reboot"
-echo
-echo "Digite:"
-echo "menu"
-echo
+echo "Digite: menu"
