@@ -26,7 +26,9 @@ echo "[+] Instalando dependências..."
 apt install -y ffmpeg curl wget git python3 python3-pip vnstat
 
 echo "[+] Instalando yt-dlp..."
-curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+-o /usr/local/bin/yt-dlp
+
 chmod +x /usr/local/bin/yt-dlp
 
 mkdir -p "$BASE/hls"
@@ -87,12 +89,11 @@ while true; do
 URL=$(yt-dlp -f best -g "$LINK" 2>/dev/null)
 
 if [ -z "$URL" ]; then
-echo "Erro ao obter stream"
 sleep 5
 continue
 fi
 
-ffmpeg -re -loglevel warning \
+ffmpeg -loglevel error -re \
 -i "$URL" \
 -c:v copy \
 -c:a aac \
@@ -100,7 +101,7 @@ ffmpeg -re -loglevel warning \
 -hls_time 4 \
 -hls_list_size 6 \
 -hls_flags delete_segments \
-"$HLS/$NAME.m3u8"
+"$HLS/$NAME.m3u8" >/dev/null 2>&1
 
 sleep 3
 
@@ -208,12 +209,10 @@ pause
 return
 fi
 
-echo "Reativando canal..."
-
 (
 while true; do
 
-ffmpeg -re \
+ffmpeg -loglevel error -re \
 -stream_loop -1 \
 -i "$FILE" \
 -c copy \
@@ -221,7 +220,7 @@ ffmpeg -re \
 -hls_time 4 \
 -hls_list_size 6 \
 -hls_flags delete_segments \
-"$HLS/$NAME.m3u8"
+"$HLS/$NAME.m3u8" >/dev/null 2>&1
 
 sleep 3
 
@@ -251,9 +250,6 @@ read -rp "Opção: " OP
 
 [ "$OP" = "0" ] && return
 
-echo
-echo "Iniciando canais..."
-
 for FILE in "$HLS"/*.m3u8; do
 
 [ -f "$FILE" ] || continue
@@ -264,12 +260,10 @@ PID="${STREAMS[$NAME]}"
 
 if [ -z "$PID" ] || ! ps -p "$PID" >/dev/null 2>&1; then
 
-echo "Iniciando $NAME"
-
 (
 while true; do
 
-ffmpeg -re \
+ffmpeg -loglevel error -re \
 -stream_loop -1 \
 -i "$FILE" \
 -c copy \
@@ -277,7 +271,7 @@ ffmpeg -re \
 -hls_time 4 \
 -hls_list_size 6 \
 -hls_flags delete_segments \
-"$HLS/$NAME.m3u8"
+"$HLS/$NAME.m3u8" >/dev/null 2>&1
 
 sleep 3
 
@@ -304,11 +298,7 @@ clear
 echo "CANAIS OFF"
 echo "-----------"
 
-for FILE in "$HLS"/*.m3u8; do
-
-[ -f "$FILE" ] || continue
-
-NAME=$(basename "$FILE" .m3u8)
+for NAME in "${!STREAMS[@]}"; do
 
 PID="${STREAMS[$NAME]}"
 
@@ -354,9 +344,11 @@ pause
 # =====================================
 
 clean_segments(){
+
 find "$HLS" -name "*.ts" -type f -mmin +10 -delete
 echo "Segmentos antigos removidos"
 pause
+
 }
 
 # =====================================
@@ -364,9 +356,11 @@ pause
 # =====================================
 
 backup(){
+
 tar -czf "$BASE/backup.tar.gz" "$BASE"
 echo "Backup criado em $BASE/backup.tar.gz"
 pause
+
 }
 
 # =====================================
@@ -374,11 +368,16 @@ pause
 # =====================================
 
 restart_hls(){
+
 pkill -f "http.server"
+
 cd "$HLS"
 python3 -m http.server 8080 >/dev/null 2>&1 &
+
 echo "Servidor reiniciado"
+
 pause
+
 }
 
 # =====================================
@@ -429,6 +428,7 @@ echo "http://$IP:8080/$NAME.m3u8" >> "$PLAYLIST"
 done
 
 echo "Playlist criada em $PLAYLIST"
+
 pause
 
 }
