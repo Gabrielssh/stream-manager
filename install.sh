@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =====================================
-# IPTV PRO SERVER ULTRA INSTALL
+# IPTV PRO SERVER INSTALL + MENU
 # =====================================
 
 set -e
@@ -13,8 +13,8 @@ PLAYLIST="$BASE/playlist.m3u"
 MENU="/usr/local/bin/menu"
 
 if [ "$EUID" -ne 0 ]; then
- echo "Execute como root"
- exit 1
+echo "Execute como root"
+exit 1
 fi
 
 apt update -y
@@ -73,28 +73,25 @@ DB="$BASE/channels.db"
 PLAYLIST="$BASE/playlist.m3u"
 
 pause(){ read -rp "Pressione ENTER..."; }
-
 sanitize(){ echo "$1" | tr ' ' '_' | tr -cd '[:alnum:]_'; }
 
 create_service(){
 
 NAME="$1"
 LINK="$2"
+
+SCRIPT="/root/iptv_pro/run-$NAME.sh"
 SERVICE="/etc/systemd/system/iptv-$NAME.service"
 
-cat > "$SERVICE" <<EOL
-[Unit]
-Description=IPTV Channel $NAME
-After=network.target
+# SCRIPT DO CANAL (corrige erro com & no link)
+cat > "$SCRIPT" <<EOF2
+#!/usr/bin/env bash
 
-[Service]
-Type=simple
-Restart=always
-RestartSec=5
+HLS="/var/www/iptv/hls"
 
-ExecStart=/usr/bin/bash -c '
 while true
 do
+
 URL=\$(/usr/local/bin/yt-dlp -f best -g "$LINK" 2>/dev/null)
 
 if [ -n "\$URL" ]; then
@@ -104,16 +101,30 @@ if [ -n "\$URL" ]; then
 -hls_time 4 \
 -hls_list_size 6 \
 -hls_flags delete_segments \
-"$HLS/$NAME.m3u8"
+"\$HLS/$NAME.m3u8"
 fi
 
 sleep 5
 done
-'
+EOF2
+
+chmod +x "$SCRIPT"
+
+# SERVICE LIMPO
+cat > "$SERVICE" <<EOF2
+[Unit]
+Description=IPTV Channel $NAME
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$SCRIPT
+Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-EOL
+EOF2
 
 systemctl daemon-reload
 systemctl enable iptv-$NAME
@@ -158,6 +169,7 @@ systemctl disable iptv-$NAME
 rm -f /etc/systemd/system/iptv-$NAME.service
 rm -f "$HLS/$NAME.m3u8"
 rm -f "$HLS/$NAME"*.ts
+rm -f "/root/iptv_pro/run-$NAME.sh"
 sed -i "/^$NAME|/d" "$DB"
 systemctl daemon-reload
 pause
@@ -254,7 +266,7 @@ while true
 do
 clear
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " IPTV PRO SERVER ULTRA"
+echo " IPTV PRO SERVER"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 echo "1) Adicionar canal"
