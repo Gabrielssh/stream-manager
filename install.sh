@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =====================================
-# IPTV PRO SERVER INSTALL + MENU
+# IPTV PRO SERVER INSTALLER FINAL
 # =====================================
 
 set -e
@@ -37,15 +37,15 @@ chmod +x /usr/local/bin/yt-dlp
 echo "[+] Criando estrutura..."
 
 mkdir -p "$HLS"
-mkdir -p "$BASE/backup"
 mkdir -p "$BASE/logs"
+mkdir -p "$BASE/backup"
 
 touch "$DB"
 
 chown -R www-data:www-data /var/www/iptv
 chmod -R 755 /var/www/iptv
 
-echo "[+] Configurando Nginx..."
+echo "[+] Configurando nginx..."
 
 cat > /etc/nginx/sites-available/iptv <<EOF
 server {
@@ -86,8 +86,6 @@ HLS="/var/www/iptv/hls"
 DB="$BASE/channels.db"
 PLAYLIST="$BASE/playlist.m3u"
 
-declare -A STREAMS
-
 pause(){
 read -rp "Pressione ENTER..."
 }
@@ -101,28 +99,28 @@ start_stream(){
 NAME="$1"
 LINK="$2"
 
-(
+nohup bash -c "
+
 while true
 do
 
-URL=$(yt-dlp -f best -g "$LINK" 2>/dev/null)
+URL=\$(yt-dlp -f best -g \"$LINK\" 2>/dev/null)
 
 ffmpeg -loglevel error -re \
--i "$URL" \
+-i \"\$URL\" \
 -c:v copy \
 -c:a aac \
 -f hls \
 -hls_time 4 \
 -hls_list_size 6 \
 -hls_flags delete_segments \
-"$HLS/$NAME.m3u8" >/dev/null 2>&1
+\"$HLS/$NAME.m3u8\"
 
 sleep 5
 
 done
-) &
 
-STREAMS["$NAME"]=$!
+" > /dev/null 2>&1 &
 
 }
 
@@ -149,15 +147,9 @@ stop_channel(){
 
 read -rp "Nome do canal: " NAME
 
-PID="${STREAMS[$NAME]}"
+pkill -f "$HLS/$NAME.m3u8"
 
-if [ -n "$PID" ]; then
-kill "$PID"
-unset STREAMS["$NAME"]
 echo "Canal parado"
-else
-echo "Canal não ativo"
-fi
 
 pause
 
@@ -180,11 +172,12 @@ activate_all(){
 while IFS="|" read -r NAME LINK
 do
 
-PID="${STREAMS[$NAME]}"
+if ! pgrep -f "$HLS/$NAME.m3u8" >/dev/null; then
 
-if ! ps -p "$PID" >/dev/null 2>&1; then
 echo "Iniciando $NAME"
+
 start_stream "$NAME" "$LINK"
+
 fi
 
 done < "$DB"
@@ -207,6 +200,8 @@ read -rp "Nome do canal: " NAME
 
 sed -i "/^$NAME|/d" "$DB"
 
+pkill -f "$HLS/$NAME.m3u8"
+
 rm -f "$HLS/$NAME.m3u8"
 rm -f "$HLS/$NAME"*.ts
 
@@ -222,9 +217,11 @@ IP=$(hostname -I | awk '{print $1}')
 
 while IFS="|" read -r NAME LINK
 do
+
 echo "$NAME"
 echo "http://$IP:8080/$NAME.m3u8"
 echo
+
 done < "$DB"
 
 pause
@@ -286,9 +283,7 @@ show_off(){
 for NAME in $(cut -d "|" -f1 "$DB")
 do
 
-PID="${STREAMS[$NAME]}"
-
-if ! ps -p "$PID" >/dev/null 2>&1; then
+if ! pgrep -f "$HLS/$NAME.m3u8" >/dev/null; then
 echo "$NAME"
 fi
 
@@ -300,12 +295,12 @@ pause
 
 show_uptime(){
 
-for NAME in "${!STREAMS[@]}"
+for NAME in $(cut -d "|" -f1 "$DB")
 do
 
-PID="${STREAMS[$NAME]}"
+PID=$(pgrep -f "$HLS/$NAME.m3u8")
 
-if ps -p "$PID" >/dev/null 2>&1; then
+if [ -n "$PID" ]; then
 
 TIME=$(ps -p "$PID" -o etime=)
 
@@ -345,8 +340,8 @@ pause
 show_mbps(){
 
 clear
-echo "CONSUMO EM Mbps POR CANAL"
-echo "--------------------------"
+echo "CONSUMO Mbps POR CANAL"
+echo "----------------------"
 
 for FILE in "$HLS"/*.m3u8
 do
@@ -433,6 +428,27 @@ menu
 EOF
 
 chmod +x "$MENU"
+
+# =====================================
+# AUTO START
+# =====================================
+
+cat > /etc/systemd/system/iptv.service <<EOF
+[Unit]
+Description=IPTV Streams
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/menu
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable iptv
 
 echo
 echo "================================="
