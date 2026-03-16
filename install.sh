@@ -7,7 +7,7 @@
 set -e
 
 BASE="/root/iptv_pro"
-HLS="$BASE/hls"
+HLS="/var/www/iptv/hls"
 DB="$BASE/channels.db"
 PLAYLIST="$BASE/playlist.m3u"
 MENU="/usr/local/bin/menu"
@@ -28,6 +28,7 @@ echo "[+] Instalando dependências..."
 apt install -y ffmpeg nginx curl vnstat python3
 
 echo "[+] Instalando yt-dlp..."
+
 curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
 -o /usr/local/bin/yt-dlp
 
@@ -42,13 +43,24 @@ mkdir -p "$BASE/logs"
 touch "$DB"
 
 # =====================================
+# PERMISSÕES NGINX
+# =====================================
+
+chown -R www-data:www-data /var/www/iptv
+chmod -R 755 /var/www/iptv
+
+# =====================================
 # CONFIGURAR NGINX
 # =====================================
+
+echo "[+] Configurando Nginx..."
 
 cat > /etc/nginx/sites-available/iptv <<EOF
 server {
 
 listen 8080;
+
+root /var/www/iptv/hls;
 
 location / {
 
@@ -56,8 +68,6 @@ types {
 application/vnd.apple.mpegurl m3u8;
 video/mp2t ts;
 }
-
-root $HLS;
 
 add_header Cache-Control no-cache;
 
@@ -69,6 +79,7 @@ EOF
 ln -sf /etc/nginx/sites-available/iptv /etc/nginx/sites-enabled/iptv
 rm -f /etc/nginx/sites-enabled/default
 
+nginx -t
 systemctl restart nginx
 
 # =====================================
@@ -79,7 +90,7 @@ cat > "$MENU" << 'EOF'
 #!/usr/bin/env bash
 
 BASE="/root/iptv_pro"
-HLS="$BASE/hls"
+HLS="/var/www/iptv/hls"
 DB="$BASE/channels.db"
 PLAYLIST="$BASE/playlist.m3u"
 
