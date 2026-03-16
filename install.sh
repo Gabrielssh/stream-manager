@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =====================================
-# IPTV PRO SERVER AUTO INSTALL
+# IPTV PRO SERVER INSTALL + MENU
 # =====================================
 
 set -e
@@ -42,16 +42,8 @@ mkdir -p "$BASE/logs"
 
 touch "$DB"
 
-# =====================================
-# PERMISSÕES NGINX
-# =====================================
-
 chown -R www-data:www-data /var/www/iptv
 chmod -R 755 /var/www/iptv
-
-# =====================================
-# CONFIGURAR NGINX
-# =====================================
 
 echo "[+] Configurando Nginx..."
 
@@ -83,7 +75,7 @@ nginx -t
 systemctl restart nginx
 
 # =====================================
-# CRIAR MENU IPTV
+# MENU IPTV
 # =====================================
 
 cat > "$MENU" << 'EOF'
@@ -110,16 +102,10 @@ NAME="$1"
 LINK="$2"
 
 (
-
 while true
 do
 
 URL=$(yt-dlp -f best -g "$LINK" 2>/dev/null)
-
-if [ -z "$URL" ]; then
-sleep 5
-continue
-fi
 
 ffmpeg -loglevel error -re \
 -i "$URL" \
@@ -134,7 +120,6 @@ ffmpeg -loglevel error -re \
 sleep 5
 
 done
-
 ) &
 
 STREAMS["$NAME"]=$!
@@ -198,11 +183,8 @@ do
 PID="${STREAMS[$NAME]}"
 
 if ! ps -p "$PID" >/dev/null 2>&1; then
-
 echo "Iniciando $NAME"
-
 start_stream "$NAME" "$LINK"
-
 fi
 
 done < "$DB"
@@ -236,17 +218,13 @@ pause
 
 show_links(){
 
-clear
-
 IP=$(hostname -I | awk '{print $1}')
 
 while IFS="|" read -r NAME LINK
 do
-
 echo "$NAME"
 echo "http://$IP:8080/$NAME.m3u8"
 echo
-
 done < "$DB"
 
 pause
@@ -341,6 +319,56 @@ pause
 
 }
 
+show_viewers(){
+
+clear
+echo "USUÁRIOS ASSISTINDO"
+echo "--------------------"
+
+for FILE in "$HLS"/*.m3u8
+do
+
+[ -f "$FILE" ] || continue
+
+NAME=$(basename "$FILE" .m3u8)
+
+COUNT=$(grep "$NAME" /var/log/nginx/access.log | awk '{print $1}' | sort | uniq | wc -l)
+
+echo "$NAME : $COUNT usuários"
+
+done
+
+pause
+
+}
+
+show_mbps(){
+
+clear
+echo "CONSUMO EM Mbps POR CANAL"
+echo "--------------------------"
+
+for FILE in "$HLS"/*.m3u8
+do
+
+[ -f "$FILE" ] || continue
+
+NAME=$(basename "$FILE" .m3u8)
+
+BYTES=$(grep "$NAME" /var/log/nginx/access.log | awk '{sum+=$10} END {print sum}')
+
+[ -z "$BYTES" ] && BYTES=0
+
+MBPS=$(awk "BEGIN {printf \"%.2f\", ($BYTES*8)/(1024*1024)}")
+
+echo "$NAME : $MBPS Mbps"
+
+done
+
+pause
+
+}
+
 menu(){
 
 while true
@@ -367,6 +395,8 @@ echo "12) Ativar canal"
 echo "13) Ativar todos canais"
 echo "14) Mostrar canais OFF"
 echo "15) Tempo online canais"
+echo "16) Usuários assistindo"
+echo "17) Consumo Mbps por canal"
 echo "0) Sair"
 echo
 
@@ -389,6 +419,8 @@ case "$OP" in
 13) activate_all ;;
 14) show_off ;;
 15) show_uptime ;;
+16) show_viewers ;;
+17) show_mbps ;;
 0) exit ;;
 
 esac
