@@ -73,7 +73,12 @@ DB="$BASE/channels.db"
 PLAYLIST="$BASE/playlist.m3u"
 
 pause(){ read -rp "Pressione ENTER..."; }
+
 sanitize(){ echo "$1" | tr ' ' '_' | tr -cd '[:alnum:]_'; }
+
+normalize_link(){
+echo "$1" | sed 's#m.youtube.com#www.youtube.com#g' | cut -d "&" -f1
+}
 
 create_service(){
 
@@ -83,7 +88,6 @@ LINK="$2"
 SCRIPT="/root/iptv_pro/run-$NAME.sh"
 SERVICE="/etc/systemd/system/iptv-$NAME.service"
 
-# SCRIPT DO CANAL (corrige erro com & no link)
 cat > "$SCRIPT" <<EOF2
 #!/usr/bin/env bash
 
@@ -92,17 +96,21 @@ HLS="/var/www/iptv/hls"
 while true
 do
 
-URL=\$(/usr/local/bin/yt-dlp -f best -g "$LINK" 2>/dev/null)
+URL=\$(/usr/local/bin/yt-dlp --no-playlist -f "best[ext=mp4]" -g "$LINK" 2>/dev/null)
 
-if [ -n "\$URL" ]; then
+if [ -z "\$URL" ]; then
+sleep 5
+continue
+fi
+
 /usr/bin/ffmpeg -loglevel error -re -i "\$URL" \
--c:v copy -c:a aac \
+-c:v copy \
+-c:a aac \
 -f hls \
 -hls_time 4 \
 -hls_list_size 6 \
--hls_flags delete_segments \
+-hls_flags delete_segments+append_list \
 "\$HLS/$NAME.m3u8"
-fi
 
 sleep 5
 done
@@ -110,7 +118,6 @@ EOF2
 
 chmod +x "$SCRIPT"
 
-# SERVICE LIMPO
 cat > "$SERVICE" <<EOF2
 [Unit]
 Description=IPTV Channel $NAME
@@ -135,9 +142,14 @@ add_channel(){
 clear
 read -rp "Nome do canal: " NAME
 NAME=$(sanitize "$NAME")
+
 read -rp "Link: " LINK
+LINK=$(normalize_link "$LINK")
+
 echo "$NAME|$LINK" >> "$DB"
+
 create_service "$NAME" "$LINK"
+
 echo "Canal iniciado"
 pause
 }
