@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =====================================
-# IPTV PRO SERVER INSTALLER FINAL
+# IPTV PRO SERVER AUTO INSTALL (FULL)
 # =====================================
 
 set -e
@@ -21,62 +21,44 @@ echo "Execute como root"
 exit 1
 fi
 
-echo "[+] Atualizando sistema..."
 apt update -y
-
-echo "[+] Instalando dependências..."
 apt install -y ffmpeg nginx curl vnstat python3
-
-echo "[+] Instalando yt-dlp..."
 
 curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
 -o /usr/local/bin/yt-dlp
 
 chmod +x /usr/local/bin/yt-dlp
 
-echo "[+] Criando estrutura..."
-
 mkdir -p "$HLS"
-mkdir -p "$BASE/logs"
 mkdir -p "$BASE/backup"
-
+mkdir -p "$BASE/logs"
 touch "$DB"
 
 chown -R www-data:www-data /var/www/iptv
 chmod -R 755 /var/www/iptv
 
-echo "[+] Configurando nginx..."
-
 cat > /etc/nginx/sites-available/iptv <<EOF
 server {
-
 listen 8080;
-
 root /var/www/iptv/hls;
 
 location / {
-
 types {
 application/vnd.apple.mpegurl m3u8;
 video/mp2t ts;
 }
-
 add_header Cache-Control no-cache;
-
+add_header Access-Control-Allow-Origin *;
 }
-
 }
 EOF
 
 ln -sf /etc/nginx/sites-available/iptv /etc/nginx/sites-enabled/iptv
 rm -f /etc/nginx/sites-enabled/default
-
 nginx -t
 systemctl restart nginx
 
-# =====================================
-# MENU IPTV
-# =====================================
+# ================= MENU =================
 
 cat > "$MENU" << 'EOF'
 #!/usr/bin/env bash
@@ -86,293 +68,150 @@ HLS="/var/www/iptv/hls"
 DB="$BASE/channels.db"
 PLAYLIST="$BASE/playlist.m3u"
 
-pause(){
-read -rp "Pressione ENTER..."
-}
+pause(){ read -rp "Pressione ENTER..."; }
 
-sanitize(){
-echo "$1" | tr ' ' '_' | tr -cd '[:alnum:]_'
-}
+sanitize(){ echo "$1" | tr ' ' '_' | tr -cd '[:alnum:]_'; }
 
-start_stream(){
+create_service(){
 
 NAME="$1"
 LINK="$2"
 
-nohup bash -c "
+cat > /etc/systemd/system/iptv-$NAME.service <<EOL
+[Unit]
+Description=IPTV Channel $NAME
+After=network.target
 
-while true
-do
+[Service]
+Type=simple
+ExecStart=/bin/bash -c 'while true; do URL=\$(yt-dlp -f best -g "$LINK" 2>/dev/null); if [ -n "\$URL" ]; then ffmpeg -loglevel error -re -i "\$URL" -c:v copy -c:a aac -f hls -hls_time 4 -hls_list_size 6 -hls_flags delete_segments "$HLS/$NAME.m3u8"; fi; sleep 5; done'
+Restart=always
+RestartSec=5
 
-URL=\$(yt-dlp -f best -g \"$LINK\" 2>/dev/null)
+[Install]
+WantedBy=multi-user.target
+EOL
 
-ffmpeg -loglevel error -re \
--i \"\$URL\" \
--c:v copy \
--c:a aac \
--f hls \
--hls_time 4 \
--hls_list_size 6 \
--hls_flags delete_segments \
-\"$HLS/$NAME.m3u8\"
-
-sleep 5
-
-done
-
-" > /dev/null 2>&1 &
-
+systemctl daemon-reload
+systemctl enable iptv-$NAME
+systemctl start iptv-$NAME
 }
 
 add_channel(){
-
 clear
-
 read -rp "Nome do canal: " NAME
 NAME=$(sanitize "$NAME")
-
 read -rp "Link: " LINK
-
 echo "$NAME|$LINK" >> "$DB"
-
-start_stream "$NAME" "$LINK"
-
-echo "Canal adicionado"
-
+create_service "$NAME" "$LINK"
+echo "Canal iniciado em background"
 pause
-
 }
 
 stop_channel(){
-
 read -rp "Nome do canal: " NAME
-
-pkill -f "$HLS/$NAME.m3u8"
-
-echo "Canal parado"
-
+systemctl stop iptv-$NAME 2>/dev/null
 pause
-
 }
 
 activate_channel(){
-
 read -rp "Nome do canal: " NAME
-
-LINK=$(grep "^$NAME|" "$DB" | cut -d "|" -f2)
-
-start_stream "$NAME" "$LINK"
-
+systemctl start iptv-$NAME
 pause
-
 }
 
 activate_all(){
-
-while IFS="|" read -r NAME LINK
-do
-
-if ! pgrep -f "$HLS/$NAME.m3u8" >/dev/null; then
-
-echo "Iniciando $NAME"
-
-start_stream "$NAME" "$LINK"
-
-fi
-
+while IFS="|" read -r NAME LINK; do
+systemctl start iptv-$NAME
 done < "$DB"
-
+echo "Todos ativados"
 pause
-
 }
 
 list_channels(){
-
 cut -d "|" -f1 "$DB"
-
 pause
-
 }
 
 remove_channel(){
-
 read -rp "Nome do canal: " NAME
-
-sed -i "/^$NAME|/d" "$DB"
-
-pkill -f "$HLS/$NAME.m3u8"
-
+systemctl stop iptv-$NAME 2>/dev/null
+systemctl disable iptv-$NAME 2>/dev/null
+rm -f /etc/systemd/system/iptv-$NAME.service
 rm -f "$HLS/$NAME.m3u8"
 rm -f "$HLS/$NAME"*.ts
-
+sed -i "/^$NAME|/d" "$DB"
+systemctl daemon-reload
 echo "Canal removido"
-
 pause
-
 }
 
 show_links(){
-
 IP=$(hostname -I | awk '{print $1}')
-
-while IFS="|" read -r NAME LINK
-do
-
+while IFS="|" read -r NAME LINK; do
 echo "$NAME"
 echo "http://$IP:8080/$NAME.m3u8"
 echo
-
 done < "$DB"
-
 pause
-
 }
 
 export_playlist(){
-
 IP=$(hostname -I | awk '{print $1}')
-
 echo "#EXTM3U" > "$PLAYLIST"
-
-while IFS="|" read -r NAME LINK
-do
-
+while IFS="|" read -r NAME LINK; do
 echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
 echo "http://$IP:8080/$NAME.m3u8" >> "$PLAYLIST"
-
 done < "$DB"
-
 echo "Playlist criada"
-
 pause
-
 }
 
 clean_segments(){
-
 find "$HLS" -name "*.ts" -mmin +10 -delete
-
 echo "Segmentos removidos"
-
 pause
-
 }
 
 backup(){
-
 tar -czf "$BASE/backup/iptv_backup.tar.gz" "$BASE"
-
 echo "Backup criado"
-
 pause
-
 }
 
 restart_hls(){
-
 systemctl restart nginx
-
 echo "Servidor reiniciado"
-
 pause
-
 }
 
 show_off(){
-
-for NAME in $(cut -d "|" -f1 "$DB")
-do
-
-if ! pgrep -f "$HLS/$NAME.m3u8" >/dev/null; then
+for NAME in $(cut -d "|" -f1 "$DB"); do
+if ! systemctl is-active --quiet iptv-$NAME; then
 echo "$NAME"
 fi
-
 done
-
 pause
-
 }
 
 show_uptime(){
-
-for NAME in $(cut -d "|" -f1 "$DB")
-do
-
-PID=$(pgrep -f "$HLS/$NAME.m3u8")
-
-if [ -n "$PID" ]; then
-
-TIME=$(ps -p "$PID" -o etime=)
-
-echo "$NAME | $TIME"
-
-fi
-
+for NAME in $(cut -d "|" -f1 "$DB"); do
+echo -n "$NAME | "
+systemctl show iptv-$NAME -p ActiveEnterTimestamp | cut -d= -f2
 done
-
 pause
-
 }
 
-show_viewers(){
+monitor_ram(){ free -h; pause; }
 
-clear
-echo "USUÁRIOS ASSISTINDO"
-echo "--------------------"
-
-for FILE in "$HLS"/*.m3u8
-do
-
-[ -f "$FILE" ] || continue
-
-NAME=$(basename "$FILE" .m3u8)
-
-COUNT=$(grep "$NAME" /var/log/nginx/access.log | awk '{print $1}' | sort | uniq | wc -l)
-
-echo "$NAME : $COUNT usuários"
-
-done
-
-pause
-
-}
-
-show_mbps(){
-
-clear
-echo "CONSUMO Mbps POR CANAL"
-echo "----------------------"
-
-for FILE in "$HLS"/*.m3u8
-do
-
-[ -f "$FILE" ] || continue
-
-NAME=$(basename "$FILE" .m3u8)
-
-BYTES=$(grep "$NAME" /var/log/nginx/access.log | awk '{sum+=$10} END {print sum}')
-
-[ -z "$BYTES" ] && BYTES=0
-
-MBPS=$(awk "BEGIN {printf \"%.2f\", ($BYTES*8)/(1024*1024)}")
-
-echo "$NAME : $MBPS Mbps"
-
-done
-
-pause
-
-}
+monitor_net(){ vnstat; pause; }
 
 menu(){
 
-while true
-do
-
+while true; do
 clear
-
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " IPTV PRO SERVER"
+echo " IPTV PRO SERVER (FULL)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 echo "1) Adicionar canal"
@@ -390,15 +229,11 @@ echo "12) Ativar canal"
 echo "13) Ativar todos canais"
 echo "14) Mostrar canais OFF"
 echo "15) Tempo online canais"
-echo "16) Usuários assistindo"
-echo "17) Consumo Mbps por canal"
 echo "0) Sair"
 echo
-
 read -rp "Opção: " OP
 
 case "$OP" in
-
 1) add_channel ;;
 2) stop_channel ;;
 3) export_playlist ;;
@@ -408,20 +243,16 @@ case "$OP" in
 7) remove_channel ;;
 8) show_links ;;
 9) restart_hls ;;
-10) free -h ; pause ;;
-11) vnstat ; pause ;;
+10) monitor_ram ;;
+11) monitor_net ;;
 12) activate_channel ;;
 13) activate_all ;;
 14) show_off ;;
 15) show_uptime ;;
-16) show_viewers ;;
-17) show_mbps ;;
 0) exit ;;
-
 esac
 
 done
-
 }
 
 menu
@@ -429,33 +260,11 @@ EOF
 
 chmod +x "$MENU"
 
-# =====================================
-# AUTO START
-# =====================================
-
-cat > /etc/systemd/system/iptv.service <<EOF
-[Unit]
-Description=IPTV Streams
-After=network.target
-
-[Service]
-ExecStart=/usr/local/bin/menu
-Restart=always
-User=root
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable iptv
-
 echo
 echo "================================="
-echo " INSTALAÇÃO CONCLUÍDA"
+echo " INSTALAÇÃO CONCLUÍDA ✅"
 echo "================================="
 echo
 echo "Digite:"
-echo
 echo "menu"
 echo
