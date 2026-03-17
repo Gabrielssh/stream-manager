@@ -11,14 +11,15 @@ HLS="/var/www/iptv/hls"
 DB="$BASE/channels.db"
 PLAYLIST="$BASE/playlist.m3u"
 MENU="/usr/local/bin/menu"
+BACKUP_DIR="$BASE/backup"
 
 if [ "$EUID" -ne 0 ]; then
-echo "Execute como root"
-exit 1
+    echo "Execute como root"
+    exit 1
 fi
 
 apt update -y
-apt install -y ffmpeg nginx curl vnstat python3 glances
+apt install -y ffmpeg nginx curl vnstat python3
 
 curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
 -o /usr/local/bin/yt-dlp
@@ -78,65 +79,69 @@ pause(){ read -rp "Pressione ENTER..."; }
 sanitize(){ echo "$1" | tr ' ' '_' | tr -cd '[:alnum:]_'; }
 
 normalize_link(){
-echo "$1" | sed 's#m.youtube.com#www.youtube.com#g' | cut -d "&" -f1
+    echo "$1" | sed 's#m.youtube.com#www.youtube.com#g' | cut -d "&" -f1
 }
 
+# ================= SELEÇÃO DE QUALIDADE =================
+
 select_quality(){
-echo
-echo "Escolher qualidade:"
-echo "1) 360p"
-echo "2) 480p"
-echo "3) 720p"
-echo "4) 1080p"
-echo "5) Melhor disponível"
-echo
-read -rp "Opção: " Q
-case "$Q" in
-1) QUALITY='best[height<=360]' ;;
-2) QUALITY='best[height<=480]' ;;
-3) QUALITY='best[height<=720]' ;;
-4) QUALITY='best[height<=1080]' ;;
-5) QUALITY='best' ;;
-*) QUALITY='best' ;;
-esac
+    echo
+    echo "Escolher qualidade:"
+    echo "1) 360p"
+    echo "2) 480p"
+    echo "3) 720p"
+    echo "4) 1080p"
+    echo "5) Melhor disponível"
+    echo
+    read -rp "Opção: " Q
+    case "$Q" in
+        1) QUALITY='best[height<=360]' ;;
+        2) QUALITY='best[height<=480]' ;;
+        3) QUALITY='best[height<=720]' ;;
+        4) QUALITY='best[height<=1080]' ;;
+        5) QUALITY='best' ;;
+        *) QUALITY='best' ;;
+    esac
 }
 
 create_service(){
+    NAME="$1"
+    LINK="$2"
+    QUALITY="$3"
 
-NAME="$1"
-LINK="$2"
-QUALITY="$3"
+    SCRIPT="/root/iptv_pro/run-$NAME.sh"
+    SERVICE="/etc/systemd/system/iptv-$NAME.service"
 
-SCRIPT="/root/iptv_pro/run-$NAME.sh"
-SERVICE="/etc/systemd/system/iptv-$NAME.service"
-
-cat > "$SCRIPT" <<EOF2
+    cat > "$SCRIPT" <<EOF2
 #!/usr/bin/env bash
 
 HLS="/var/www/iptv/hls"
 
 while true
 do
-URL=\$(/usr/local/bin/yt-dlp --no-playlist -f "$QUALITY" -g "$LINK" 2>/dev/null)
-if [ -z "\$URL" ]; then
-sleep 5
-continue
-fi
-/usr/bin/ffmpeg -loglevel error -re -i "\$URL" \
--c:v copy \
--c:a aac \
--f hls \
--hls_time 4 \
--hls_list_size 6 \
--hls_flags delete_segments+append_list \
-"\$HLS/$NAME.m3u8"
-sleep 5
+    URL=\$(/usr/local/bin/yt-dlp --no-playlist -f "$QUALITY" -g "$LINK" 2>/dev/null)
+
+    if [ -z "\$URL" ]; then
+        sleep 5
+        continue
+    fi
+
+    /usr/bin/ffmpeg -loglevel error -re -i "\$URL" \
+    -c:v copy \
+    -c:a aac \
+    -f hls \
+    -hls_time 4 \
+    -hls_list_size 6 \
+    -hls_flags delete_segments+append_list \
+    "\$HLS/$NAME.m3u8"
+
+    sleep 5
 done
 EOF2
 
-chmod +x "$SCRIPT"
+    chmod +x "$SCRIPT"
 
-cat > "$SERVICE" <<EOF2
+    cat > "$SERVICE" <<EOF2
 [Unit]
 Description=IPTV Channel $NAME
 After=network.target
@@ -151,181 +156,98 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF2
 
-systemctl daemon-reload
-systemctl enable iptv-$NAME
-systemctl restart iptv-$NAME
+    systemctl daemon-reload
+    systemctl enable iptv-$NAME
+    systemctl restart iptv-$NAME
 }
 
 add_channel(){
-clear
-read -rp "Nome do canal: " NAME
-NAME=$(sanitize "$NAME")
+    clear
+    read -rp "Nome do canal: " NAME
+    NAME=$(sanitize "$NAME")
 
-read -rp "Link: " LINK
-LINK=$(normalize_link "$LINK")
+    read -rp "Link: " LINK
+    LINK=$(normalize_link "$LINK")
 
-select_quality
+    select_quality
 
-echo "$NAME|$LINK|$QUALITY" >> "$DB"
+    echo "$NAME|$LINK|$QUALITY" >> "$DB"
 
-create_service "$NAME" "$LINK" "$QUALITY"
+    create_service "$NAME" "$LINK" "$QUALITY"
 
-echo "Canal iniciado"
-pause
+    echo "Canal iniciado"
+    pause
 }
 
+# ================= BACKUP DE LINKS =================
+
 export_links_backup(){
-DATE=$(date +%Y%m%d_%H%M%S)
-cp "$DB" "$BACKUP_DIR/links_backup_$DATE.db"
-echo "Backup criado em:"
-echo "$BACKUP_DIR/links_backup_$DATE.db"
-pause
+    DATE=$(date +%Y%m%d_%H%M%S)
+    cp "$DB" "$BACKUP_DIR/links_backup_$DATE.db"
+    echo "Backup criado em:"
+    echo "$BACKUP_DIR/links_backup_$DATE.db"
+    pause
 }
 
 import_links_backup(){
-echo "Backups disponíveis:"
-ls -1 "$BACKUP_DIR"/links_backup_*.db 2>/dev/null || echo "Nenhum backup encontrado"
-echo
-read -rp "Digite o nome completo do arquivo: " FILE
+    echo "Backups disponíveis:"
+    ls -1 "$BACKUP_DIR"/links_backup_*.db 2>/dev/null || echo "Nenhum backup encontrado"
+    echo
+    read -rp "Digite o nome completo do arquivo: " FILE
 
-FULL_PATH="$BACKUP_DIR/$FILE"
+    if [ -f "$BACKUP_DIR/$FILE" ]; then
+        cp "$BACKUP_DIR/$FILE" "$DB"
+        echo "Backup importado com sucesso!"
+        echo "Reinicie os canais com opção 13"
+    else
+        echo "Arquivo não encontrado!"
+    fi
 
-if [ -f "$FULL_PATH" ]; then
-    cp "$FULL_PATH" "$DB"
-    echo "Backup importado com sucesso!"
-
-    while IFS="|" read -r NAME LINK QUALITY
-    do
-        create_service "$NAME" "$LINK" "$QUALITY"
-    done < "$DB"
-
-    echo "Serviços systemd recriados. Todos os canais podem ser ativados."
-else
-    echo "Arquivo não encontrado!"
-fi
-
-pause
+    pause
 }
 
-stop_channel(){
-read -rp "Nome do canal: " NAME
-systemctl stop iptv-$NAME
-pause
+# ================= EXCLUIR CANAL =================
+
+delete_channel(){
+    clear
+    echo "Canais disponíveis:"
+    cut -d "|" -f1 "$DB"
+    echo
+    read -rp "Digite o nome do canal que deseja excluir: " NAME
+    NAME=$(sanitize "$NAME")
+
+    if grep -q "^$NAME|" "$DB"; then
+        systemctl stop iptv-$NAME 2>/dev/null
+        systemctl disable iptv-$NAME 2>/dev/null
+        rm -f /etc/systemd/system/iptv-$NAME.service
+        rm -f "$HLS/$NAME.m3u8"
+        rm -f "$HLS/$NAME"*.ts
+        rm -f "/root/iptv_pro/run-$NAME.sh"
+        sed -i "/^$NAME|/d" "$DB"
+        systemctl daemon-reload
+        echo "Canal '$NAME' excluído com sucesso!"
+    else
+        echo "Canal '$NAME' não encontrado!"
+    fi
+    pause
 }
 
-activate_channel(){
-read -rp "Nome do canal: " NAME
-systemctl restart iptv-$NAME
-pause
-}
+# ================= RESTANTE =================
 
-activate_all(){
-while IFS="|" read -r NAME LINK QUALITY
-do
-systemctl restart iptv-$NAME
-done < "$DB"
-pause
-}
-
-remove_channel(){
-read -rp "Nome do canal: " NAME
-systemctl stop iptv-$NAME
-systemctl disable iptv-$NAME
-rm -f /etc/systemd/system/iptv-$NAME.service
-rm -f "$HLS/$NAME.m3u8"
-rm -f "$HLS/$NAME"*.ts
-rm -f "/root/iptv_pro/run-$NAME.sh"
-sed -i "/^$NAME|/d" "$DB"
-systemctl daemon-reload
-pause
-}
-
-list_channels(){
-cut -d "|" -f1 "$DB"
-pause
-}
-
-show_links(){
-IP=$(hostname -I | awk '{print $1}')
-while IFS="|" read -r NAME LINK QUALITY
-do
-echo "$NAME"
-echo "http://$IP:8080/$NAME.m3u8"
-echo
-done < "$DB"
-pause
-}
-
-export_playlist(){
-IP=$(hostname -I | awk '{print $1}')
-echo "#EXTM3U" > "$PLAYLIST"
-while IFS="|" read -r NAME LINK QUALITY
-do
-echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
-echo "http://$IP:8080/$NAME.m3u8" >> "$PLAYLIST"
-done < "$DB"
-pause
-}
-
-clean_segments(){
-find "$HLS" -name "*.ts" -mmin +10 -delete
-pause
-}
-
-backup(){
-tar -czf "$BASE/backup/iptv_full_backup.tar.gz" "$BASE"
-echo "Backup completo criado."
-pause
-}
-
-restart_hls(){
-systemctl restart nginx
-pause
-}
-
-show_off(){
-while IFS="|" read -r NAME LINK QUALITY
-do
-if ! systemctl is-active --quiet iptv-$NAME; then
-echo "$NAME OFF"
-fi
-done < "$DB"
-pause
-}
-
-show_uptime(){
-while IFS="|" read -r NAME LINK QUALITY
-do
-echo "$NAME"
-systemctl show iptv-$NAME --property=ActiveEnterTimestamp
-echo
-done < "$DB"
-pause
-}
-
-show_viewers(){
-for FILE in "$HLS"/*.m3u8
-do
-[ -f "$FILE" ] || continue
-NAME=$(basename "$FILE" .m3u8)
-COUNT=$(grep "$NAME" /var/log/nginx/access.log | awk '{print $1}' | sort | uniq | wc -l)
-echo "$NAME : $COUNT usuários"
-done
-pause
-}
-
-show_mbps(){
-for FILE in "$HLS"/*.m3u8
-do
-[ -f "$FILE" ] || continue
-NAME=$(basename "$FILE" .m3u8)
-BYTES=$(grep "$NAME" /var/log/nginx/access.log | awk '{sum+=$10} END {print sum}')
-[ -z "$BYTES" ] && BYTES=0
-MBPS=$(awk "BEGIN {printf \"%.2f\", ($BYTES*8)/(1024*1024)}")
-echo "$NAME : $MBPS Mbps"
-done
-pause
-}
+stop_channel(){ read -rp "Nome do canal: " NAME; systemctl stop iptv-$NAME; pause; }
+activate_channel(){ read -rp "Nome do canal: " NAME; systemctl restart iptv-$NAME; pause; }
+activate_all(){ while IFS="|" read -r NAME LINK QUALITY; do systemctl restart iptv-$NAME; done < "$DB"; pause; }
+remove_channel(){ read -rp "Nome do canal: " NAME; systemctl stop iptv-$NAME; systemctl disable iptv-$NAME; rm -f /etc/systemd/system/iptv-$NAME.service; rm -f "$HLS/$NAME.m3u8"; rm -f "$HLS/$NAME"*.ts; rm -f "/root/iptv_pro/run-$NAME.sh"; sed -i "/^$NAME|/d" "$DB"; systemctl daemon-reload; pause; }
+list_channels(){ cut -d "|" -f1 "$DB"; pause; }
+show_links(){ IP=$(hostname -I | awk '{print $1}'); while IFS="|" read -r NAME LINK QUALITY; do echo "$NAME"; echo "http://$IP:8080/$NAME.m3u8"; echo; done < "$DB"; pause; }
+export_playlist(){ IP=$(hostname -I | awk '{print $1}'); echo "#EXTM3U" > "$PLAYLIST"; while IFS="|" read -r NAME LINK QUALITY; do echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"; echo "http://$IP:8080/$NAME.m3u8" >> "$PLAYLIST"; done < "$DB"; pause; }
+clean_segments(){ find "$HLS" -name "*.ts" -mmin +10 -delete; pause; }
+backup(){ tar -czf "$BASE/backup/iptv_full_backup.tar.gz" "$BASE"; echo "Backup completo criado."; pause; }
+restart_hls(){ systemctl restart nginx; pause; }
+show_off(){ while IFS="|" read -r NAME LINK QUALITY; do if ! systemctl is-active --quiet iptv-$NAME; then echo "$NAME OFF"; fi; done < "$DB"; pause; }
+show_uptime(){ while IFS="|" read -r NAME LINK QUALITY; do echo "$NAME"; systemctl show iptv-$NAME --property=ActiveEnterTimestamp; echo; done < "$DB"; pause; }
+show_viewers(){ for FILE in "$HLS"/*.m3u8; do [ -f "$FILE" ] || continue; NAME=$(basename "$FILE" .m3u8); COUNT=$(grep "$NAME" /var/log/nginx/access.log | awk '{print $1}' | sort | uniq | wc -l); echo "$NAME : $COUNT usuários"; done; pause; }
+show_mbps(){ for FILE in "$HLS"/*.m3u8; do [ -f "$FILE" ] || continue; NAME=$(basename "$FILE" .m3u8); BYTES=$(grep "$NAME" /var/log/nginx/access.log | awk '{sum+=$10} END {print sum}'); [ -z "$BYTES" ] && BYTES=0; MBPS=$(awk "BEGIN {printf \"%.2f\", ($BYTES*8)/(1024*1024)}"); echo "$NAME : $MBPS Mbps"; done; pause; }
 
 menu(){
 while true
@@ -352,7 +274,7 @@ echo "14) Mostrar canais OFF"
 echo "15) Tempo online"
 echo "16) Usuários assistindo"
 echo "17) Consumo Mbps por canal"
-echo "18) Monitoramento CPU/RAM/NET (Glances)"
+echo "19) Excluir canal criado"
 echo "0) Sair"
 echo
 
@@ -376,7 +298,7 @@ case "$OP" in
 15) show_uptime ;;
 16) show_viewers ;;
 17) show_mbps ;;
-18) glances ;;
+19) delete_channel ;;
 0) exit ;;
 esac
 done
