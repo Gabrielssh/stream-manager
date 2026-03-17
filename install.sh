@@ -240,6 +240,8 @@ remove_channel(){
     pause
 }
 
+# ================= NOVA FUNÇÃO 19 =================
+
 delete_channel(){
     clear
     echo "Canais disponíveis:"
@@ -264,11 +266,6 @@ delete_channel(){
     pause
 }
 
-clean_segments(){
-    find "$HLS" -name "*.ts" -mmin +10 -delete
-    pause
-}
-
 # ================= NOVA FUNÇÃO 20 =================
 
 auto_clean_segments(){
@@ -284,6 +281,38 @@ auto_clean_segments(){
         find "$HLS" -name "*.ts" -mmin +"$INTERVAL" -delete
         sleep "$((INTERVAL * 60))"
     done
+}
+
+list_channels(){
+    cut -d "|" -f1 "$DB"
+    pause
+}
+
+show_links(){
+    IP=$(hostname -I | awk '{print $1}')
+    while IFS="|" read -r NAME LINK QUALITY
+    do
+        echo "$NAME"
+        echo "http://$IP:8080/$NAME.m3u8"
+        echo
+    done < "$DB"
+    pause
+}
+
+export_playlist(){
+    IP=$(hostname -I | awk '{print $1}')
+    echo "#EXTM3U" > "$PLAYLIST"
+    while IFS="|" read -r NAME LINK QUALITY
+    do
+        echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
+        echo "http://$IP:8080/$NAME.m3u8" >> "$PLAYLIST"
+    done < "$DB"
+    pause
+}
+
+clean_segments(){
+    find "$HLS" -name "*.ts" -mmin +10 -delete
+    pause
 }
 
 backup(){
