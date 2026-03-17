@@ -81,8 +81,6 @@ normalize_link(){
 echo "$1" | sed 's#m.youtube.com#www.youtube.com#g' | cut -d "&" -f1
 }
 
-# ================= SELEÇÃO DE QUALIDADE =================
-
 select_quality(){
 
 echo
@@ -199,8 +197,10 @@ ls -1 "$BACKUP_DIR"/links_backup_*.db 2>/dev/null || echo "Nenhum backup encontr
 echo
 read -rp "Digite o nome completo do arquivo: " FILE
 
-if [ -f "$FILE" ]; then
-cp "$FILE" "$DB"
+FULL_PATH="$BACKUP_DIR/$FILE"
+
+if [ -f "$FULL_PATH" ]; then
+cp "$FULL_PATH" "$DB"
 echo "Backup importado com sucesso!"
 echo "Reinicie os canais com opção 13"
 else
@@ -209,8 +209,6 @@ fi
 
 pause
 }
-
-# ================= RESTANTE =================
 
 stop_channel(){
 read -rp "Nome do canal: " NAME
