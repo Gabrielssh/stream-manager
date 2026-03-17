@@ -80,10 +80,36 @@ normalize_link(){
 echo "$1" | sed 's#m.youtube.com#www.youtube.com#g' | cut -d "&" -f1
 }
 
+# ================= SELEÇÃO DE QUALIDADE =================
+
+select_quality(){
+
+echo
+echo "Escolher qualidade:"
+echo "1) 360p"
+echo "2) 480p"
+echo "3) 720p"
+echo "4) 1080p"
+echo "5) Melhor disponível"
+echo
+
+read -rp "Opção: " Q
+
+case "$Q" in
+1) QUALITY='best[height<=360]' ;;
+2) QUALITY='best[height<=480]' ;;
+3) QUALITY='best[height<=720]' ;;
+4) QUALITY='best[height<=1080]' ;;
+5) QUALITY='best' ;;
+*) QUALITY='best' ;;
+esac
+}
+
 create_service(){
 
 NAME="$1"
 LINK="$2"
+QUALITY="$3"
 
 SCRIPT="/root/iptv_pro/run-$NAME.sh"
 SERVICE="/etc/systemd/system/iptv-$NAME.service"
@@ -96,7 +122,7 @@ HLS="/var/www/iptv/hls"
 while true
 do
 
-URL=\$(/usr/local/bin/yt-dlp --no-playlist -f "best[ext=mp4]" -g "$LINK" 2>/dev/null)
+URL=\$(/usr/local/bin/yt-dlp --no-playlist -f "$QUALITY" -g "$LINK" 2>/dev/null)
 
 if [ -z "\$URL" ]; then
 sleep 5
@@ -146,9 +172,11 @@ NAME=$(sanitize "$NAME")
 read -rp "Link: " LINK
 LINK=$(normalize_link "$LINK")
 
-echo "$NAME|$LINK" >> "$DB"
+select_quality
 
-create_service "$NAME" "$LINK"
+echo "$NAME|$LINK|$QUALITY" >> "$DB"
+
+create_service "$NAME" "$LINK" "$QUALITY"
 
 echo "Canal iniciado"
 pause
@@ -167,7 +195,7 @@ pause
 }
 
 activate_all(){
-while IFS="|" read -r NAME LINK
+while IFS="|" read -r NAME LINK QUALITY
 do
 systemctl restart iptv-$NAME
 done < "$DB"
@@ -194,7 +222,7 @@ pause
 
 show_links(){
 IP=$(hostname -I | awk '{print $1}')
-while IFS="|" read -r NAME LINK
+while IFS="|" read -r NAME LINK QUALITY
 do
 echo "$NAME"
 echo "http://$IP:8080/$NAME.m3u8"
@@ -206,7 +234,7 @@ pause
 export_playlist(){
 IP=$(hostname -I | awk '{print $1}')
 echo "#EXTM3U" > "$PLAYLIST"
-while IFS="|" read -r NAME LINK
+while IFS="|" read -r NAME LINK QUALITY
 do
 echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
 echo "http://$IP:8080/$NAME.m3u8" >> "$PLAYLIST"
@@ -230,7 +258,7 @@ pause
 }
 
 show_off(){
-while IFS="|" read -r NAME LINK
+while IFS="|" read -r NAME LINK QUALITY
 do
 if ! systemctl is-active --quiet iptv-$NAME; then
 echo "$NAME OFF"
@@ -240,7 +268,7 @@ pause
 }
 
 show_uptime(){
-while IFS="|" read -r NAME LINK
+while IFS="|" read -r NAME LINK QUALITY
 do
 echo "$NAME"
 systemctl show iptv-$NAME --property=ActiveEnterTimestamp
