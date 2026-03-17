@@ -18,7 +18,7 @@ exit 1
 fi
 
 apt update -y
-apt install -y ffmpeg nginx curl vnstat python3
+apt install -y ffmpeg nginx curl vnstat python3 glances
 
 curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
 -o /usr/local/bin/yt-dlp
@@ -82,7 +82,6 @@ echo "$1" | sed 's#m.youtube.com#www.youtube.com#g' | cut -d "&" -f1
 }
 
 select_quality(){
-
 echo
 echo "Escolher qualidade:"
 echo "1) 360p"
@@ -91,9 +90,7 @@ echo "3) 720p"
 echo "4) 1080p"
 echo "5) Melhor disponível"
 echo
-
 read -rp "Opção: " Q
-
 case "$Q" in
 1) QUALITY='best[height<=360]' ;;
 2) QUALITY='best[height<=480]' ;;
@@ -120,14 +117,11 @@ HLS="/var/www/iptv/hls"
 
 while true
 do
-
 URL=\$(/usr/local/bin/yt-dlp --no-playlist -f "$QUALITY" -g "$LINK" 2>/dev/null)
-
 if [ -z "\$URL" ]; then
 sleep 5
 continue
 fi
-
 /usr/bin/ffmpeg -loglevel error -re -i "\$URL" \
 -c:v copy \
 -c:a aac \
@@ -136,7 +130,6 @@ fi
 -hls_list_size 6 \
 -hls_flags delete_segments+append_list \
 "\$HLS/$NAME.m3u8"
-
 sleep 5
 done
 EOF2
@@ -181,8 +174,6 @@ echo "Canal iniciado"
 pause
 }
 
-# ================= BACKUP DE LINKS =================
-
 export_links_backup(){
 DATE=$(date +%Y%m%d_%H%M%S)
 cp "$DB" "$BACKUP_DIR/links_backup_$DATE.db"
@@ -200,11 +191,17 @@ read -rp "Digite o nome completo do arquivo: " FILE
 FULL_PATH="$BACKUP_DIR/$FILE"
 
 if [ -f "$FULL_PATH" ]; then
-cp "$FULL_PATH" "$DB"
-echo "Backup importado com sucesso!"
-echo "Reinicie os canais com opção 13"
+    cp "$FULL_PATH" "$DB"
+    echo "Backup importado com sucesso!"
+
+    while IFS="|" read -r NAME LINK QUALITY
+    do
+        create_service "$NAME" "$LINK" "$QUALITY"
+    done < "$DB"
+
+    echo "Serviços systemd recriados. Todos os canais podem ser ativados."
 else
-echo "Arquivo não encontrado!"
+    echo "Arquivo não encontrado!"
 fi
 
 pause
@@ -355,6 +352,7 @@ echo "14) Mostrar canais OFF"
 echo "15) Tempo online"
 echo "16) Usuários assistindo"
 echo "17) Consumo Mbps por canal"
+echo "18) Monitoramento CPU/RAM/NET (Glances)"
 echo "0) Sair"
 echo
 
@@ -378,6 +376,7 @@ case "$OP" in
 15) show_uptime ;;
 16) show_viewers ;;
 17) show_mbps ;;
+18) glances ;;
 0) exit ;;
 esac
 done
