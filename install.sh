@@ -240,8 +240,6 @@ remove_channel(){
     pause
 }
 
-# ================= NOVA FUNÇÃO 19 =================
-
 delete_channel(){
     clear
     echo "Canais disponíveis:"
@@ -266,36 +264,26 @@ delete_channel(){
     pause
 }
 
-list_channels(){
-    cut -d "|" -f1 "$DB"
-    pause
-}
-
-show_links(){
-    IP=$(hostname -I | awk '{print $1}')
-    while IFS="|" read -r NAME LINK QUALITY
-    do
-        echo "$NAME"
-        echo "http://$IP:8080/$NAME.m3u8"
-        echo
-    done < "$DB"
-    pause
-}
-
-export_playlist(){
-    IP=$(hostname -I | awk '{print $1}')
-    echo "#EXTM3U" > "$PLAYLIST"
-    while IFS="|" read -r NAME LINK QUALITY
-    do
-        echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
-        echo "http://$IP:8080/$NAME.m3u8" >> "$PLAYLIST"
-    done < "$DB"
-    pause
-}
-
 clean_segments(){
     find "$HLS" -name "*.ts" -mmin +10 -delete
     pause
+}
+
+# ================= NOVA FUNÇÃO 20 =================
+
+auto_clean_segments(){
+    echo
+    echo "Defina o tempo (em minutos) para limpeza automática dos segmentos .ts"
+    echo "Exemplos: 1, 5, 10, 60"
+    read -rp "Intervalo (minutos): " INTERVAL
+    INTERVAL=${INTERVAL:-5}
+
+    echo "Iniciando limpeza automática a cada $INTERVAL minutos. Pressione CTRL+C para parar."
+    while true
+    do
+        find "$HLS" -name "*.ts" -mmin +"$INTERVAL" -delete
+        sleep "$((INTERVAL * 60))"
+    done
 }
 
 backup(){
@@ -380,6 +368,7 @@ menu(){
         echo "17) Consumo Mbps por canal"
         echo "18) Monitoramento CPU/RAM/NET (Glances)"
         echo "19) Excluir canal criado"
+        echo "20) Limpeza automática de segmentos .ts"
         echo "0) Sair"
         echo
 
@@ -405,6 +394,7 @@ menu(){
             17) show_mbps ;;
             18) glances ;;
             19) delete_channel ;;
+            20) auto_clean_segments ;;
             0) exit ;;
         esac
     done
