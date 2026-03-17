@@ -71,6 +71,7 @@ BASE="/root/iptv_pro"
 HLS="/var/www/iptv/hls"
 DB="$BASE/channels.db"
 PLAYLIST="$BASE/playlist.m3u"
+BACKUP_DIR="$BASE/backup"
 
 pause(){ read -rp "Pressione ENTER..."; }
 
@@ -182,6 +183,35 @@ echo "Canal iniciado"
 pause
 }
 
+# ================= BACKUP DE LINKS =================
+
+export_links_backup(){
+DATE=$(date +%Y%m%d_%H%M%S)
+cp "$DB" "$BACKUP_DIR/links_backup_$DATE.db"
+echo "Backup criado em:"
+echo "$BACKUP_DIR/links_backup_$DATE.db"
+pause
+}
+
+import_links_backup(){
+echo "Backups disponíveis:"
+ls -1 "$BACKUP_DIR"/links_backup_*.db 2>/dev/null || echo "Nenhum backup encontrado"
+echo
+read -rp "Digite o nome completo do arquivo: " FILE
+
+if [ -f "$FILE" ]; then
+cp "$FILE" "$DB"
+echo "Backup importado com sucesso!"
+echo "Reinicie os canais com opção 13"
+else
+echo "Arquivo não encontrado!"
+fi
+
+pause
+}
+
+# ================= RESTANTE =================
+
 stop_channel(){
 read -rp "Nome do canal: " NAME
 systemctl stop iptv-$NAME
@@ -248,7 +278,8 @@ pause
 }
 
 backup(){
-tar -czf "$BASE/backup/iptv_backup.tar.gz" "$BASE"
+tar -czf "$BASE/backup/iptv_full_backup.tar.gz" "$BASE"
+echo "Backup completo criado."
 pause
 }
 
@@ -313,11 +344,13 @@ echo "1) Adicionar canal"
 echo "2) Parar canal"
 echo "3) Exportar playlist"
 echo "4) Limpar segmentos"
-echo "5) Backup"
+echo "5) Backup completo"
 echo "6) Listar canais"
 echo "7) Remover canal"
 echo "8) Ver links"
 echo "9) Reiniciar servidor HLS"
+echo "10) Exportar backup de links"
+echo "11) Importar backup de links"
 echo "12) Ativar canal"
 echo "13) Ativar todos canais"
 echo "14) Mostrar canais OFF"
@@ -339,6 +372,8 @@ case "$OP" in
 7) remove_channel ;;
 8) show_links ;;
 9) restart_hls ;;
+10) export_links_backup ;;
+11) import_links_backup ;;
 12) activate_channel ;;
 13) activate_all ;;
 14) show_off ;;
