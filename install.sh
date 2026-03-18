@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
 # =====================================
-# IPTV PRO SERVER INSTALL + MENU
-# MATRIX / HACKER RETRO TERMINAL EDITION
+# IPTV PRO ELITE v3.0 - MATRIX LAYOUT
 # =====================================
 
 set -e
@@ -157,9 +156,6 @@ EOF2
     systemctl restart iptv-$NAME
 }
 
-# ================= FUNÇÕES ORIGINAIS (INALTERADAS) =================
-# (Todas exatamente como você enviou — mantidas integralmente)
-
 add_channel(){
     clear
     read -rp "Nome do canal: " NAME
@@ -211,8 +207,17 @@ import_links_backup(){
     pause
 }
 
-stop_channel(){ read -rp "Nome do canal: " NAME; systemctl stop iptv-$NAME; pause; }
-activate_channel(){ read -rp "Nome do canal: " NAME; systemctl restart iptv-$NAME; pause; }
+stop_channel(){
+    read -rp "Nome do canal: " NAME
+    systemctl stop iptv-$NAME
+    pause
+}
+
+activate_channel(){
+    read -rp "Nome do canal: " NAME
+    systemctl restart iptv-$NAME
+    pause
+}
 
 activate_all(){
     while IFS="|" read -r NAME LINK QUALITY
@@ -264,8 +269,7 @@ auto_clean_segments(){
     echo "Defina o tempo (em minutos) para limpeza automática dos segmentos .ts"
     read -rp "Intervalo (minutos): " INTERVAL
     INTERVAL=${INTERVAL:-5}
-
-    echo "Iniciando limpeza automática a cada $INTERVAL minutos. CTRL+C para parar."
+    echo "Iniciando limpeza automática a cada $INTERVAL minutos. Pressione CTRL+C para parar."
     while true
     do
         find "$HLS" -name "*.ts" -mmin +"$INTERVAL" -delete
@@ -273,7 +277,10 @@ auto_clean_segments(){
     done
 }
 
-list_channels(){ cut -d "|" -f1 "$DB"; pause; }
+list_channels(){
+    cut -d "|" -f1 "$DB"
+    pause
+}
 
 show_links(){
     IP=$(hostname -I | awk '{print $1}')
@@ -297,9 +304,21 @@ export_playlist(){
     pause
 }
 
-clean_segments(){ find "$HLS" -name "*.ts" -mmin +10 -delete; pause; }
-backup(){ tar -czf "$BASE/backup/iptv_full_backup.tar.gz" "$BASE"; echo "Backup completo criado."; pause; }
-restart_hls(){ systemctl restart nginx; pause; }
+clean_segments(){
+    find "$HLS" -name "*.ts" -mmin +10 -delete
+    pause
+}
+
+backup(){
+    tar -czf "$BASE/backup/iptv_full_backup.tar.gz" "$BASE"
+    echo "Backup completo criado."
+    pause
+}
+
+restart_hls(){
+    systemctl restart nginx
+    pause
+}
 
 show_off(){
     while IFS="|" read -r NAME LINK QUALITY
@@ -345,95 +364,71 @@ show_mbps(){
     pause
 }
 
-# ================= MENU MATRIX =================
-
 menu(){
-while true
-do
-    clear
-
     GREEN='\033[1;32m'
-    DARKGREEN='\033[0;32m'
-    CYAN='\033[1;36m'
     NC='\033[0m'
+    while true
+    do
+        clear
+        echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${GREEN}║${NC} ███████╗██████╗ ███████╗████████╗ ██╗   ██╗███████╗         ${GREEN}║${NC}"
+        echo -e "${GREEN}║${NC} ██╔════╝██╔══██╗██╔════╝╚══██╔══╝ ██║   ██║██╔════╝         ${GREEN}║${NC}"
+        echo -e "${GREEN}║${NC} █████╗  ██████╔╝█████╗     ██║    ██║   ██║█████╗           ${GREEN}║${NC}"
+        echo -e "${GREEN}║${NC} ██╔══╝  ██╔═══╝ ██╔══╝     ██║    ██║   ██║██╔══╝           ${GREEN}║${NC}"
+        echo -e "${GREEN}║${NC} ███████╗██║     ███████╗   ██║    ╚██████╔╝███████╗         ${GREEN}║${NC}"
+        echo -e "${GREEN}╠══════════════════════════════════════════════════════════════╣${NC}"
 
-    echo -e "${GREEN}"
-    echo "██╗██████╗ ████████╗██╗   ██╗"
-    echo "██║██╔══██╗╚══██╔══╝██║   ██║"
-    echo "██║██████╔╝   ██║   ██║   ██║"
-    echo "██║██╔═══╝    ██║   ╚██╗ ██╔╝"
-    echo "██║██║        ██║    ╚████╔╝ "
-    echo "╚═╝╚═╝        ╚═╝     ╚═══╝  "
-    echo -e "${NC}"
+        printf "${GREEN}║ 1) Adicionar canal                                         ║${NC}\n"
+        printf "${GREEN}║ 2) Parar canal                                             ║${NC}\n"
+        printf "${GREEN}║ 3) Exportar playlist                                       ║${NC}\n"
+        printf "${GREEN}║ 4) Limpar segmentos                                        ║${NC}\n"
+        printf "${GREEN}║ 5) Backup completo                                         ║${NC}\n"
+        printf "${GREEN}║ 6) Listar canais                                           ║${NC}\n"
+        printf "${GREEN}║ 7) Remover canal                                           ║${NC}\n"
+        printf "${GREEN}║ 8) Ver links                                               ║${NC}\n"
+        printf "${GREEN}║ 9) Reiniciar servidor HLS                                  ║${NC}\n"
+        printf "${GREEN}║ 10) Exportar backup de links                                ║${NC}\n"
+        printf "${GREEN}║ 11) Importar backup de links                                ║${NC}\n"
+        printf "${GREEN}║ 12) Ativar canal                                            ║${NC}\n"
+        printf "${GREEN}║ 13) Ativar todos canais                                     ║${NC}\n"
+        printf "${GREEN}║ 14) Mostrar canais OFF                                      ║${NC}\n"
+        printf "${GREEN}║ 15) Tempo online                                            ║${NC}\n"
+        printf "${GREEN}║ 16) Usuários assistindo                                     ║${NC}\n"
+        printf "${GREEN}║ 17) Consumo Mbps por canal                                  ║${NC}\n"
+        printf "${GREEN}║ 18) Monitoramento CPU/RAM/NET (Glances)                    ║${NC}\n"
+        printf "${GREEN}║ 19) Excluir canal criado                                    ║${NC}\n"
+        printf "${GREEN}║ 20) Limpeza automática de segmentos .ts                     ║${NC}\n"
+        echo -e "${GREEN}╠══════════════════════════════════════════════════════════════╣${NC}"
+        printf "${GREEN}║ 0) Sair                                                    ║${NC}\n"
+        echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
+        echo
 
-    echo -e "${DARKGREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        read -rp "Selecione uma opção: " OP
 
-    IP=$(hostname -I | awk '{print $1}')
-    TOTAL=$(wc -l < "$DB" 2>/dev/null)
-    ACTIVE=$(systemctl list-units --type=service --no-legend | grep iptv- | grep running | wc -l)
-
-    echo -e "${GREEN}IP:${NC} ${CYAN}$IP${NC} ${GREEN}| Ativos:${NC} ${CYAN}$ACTIVE${NC} ${GREEN}| Total:${NC} ${CYAN}$TOTAL${NC}"
-
-    echo -e "${DARKGREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo
-
-    echo -e "${GREEN}[ GESTÃO DE CANAIS ]${NC}"
-    echo -e " ${CYAN}[1]${NC} Adicionar canal"
-    echo -e " ${CYAN}[2]${NC} Parar canal"
-    echo -e " ${CYAN}[7]${NC} Remover canal"
-    echo -e " ${CYAN}[12]${NC} Ativar canal"
-    echo -e " ${CYAN}[13]${NC} Ativar todos canais"
-    echo -e " ${CYAN}[19]${NC} Excluir canal criado"
-    echo
-
-    echo -e "${GREEN}[ MONITORAMENTO ]${NC}"
-    echo -e " ${CYAN}[14]${NC} Mostrar canais OFF"
-    echo -e " ${CYAN}[15]${NC} Tempo online"
-    echo -e " ${CYAN}[16]${NC} Usuários assistindo"
-    echo -e " ${CYAN}[17]${NC} Consumo Mbps por canal"
-    echo -e " ${CYAN}[18]${NC} CPU/RAM/NET (Glances)"
-    echo
-
-    echo -e "${GREEN}[ SISTEMA & BACKUP ]${NC}"
-    echo -e " ${CYAN}[3]${NC} Exportar playlist"
-    echo -e " ${CYAN}[4]${NC} Limpar segmentos"
-    echo -e " ${CYAN}[5]${NC} Backup completo"
-    echo -e " ${CYAN}[6]${NC} Listar canais"
-    echo -e " ${CYAN}[8]${NC} Ver links"
-    echo -e " ${CYAN}[9]${NC} Reiniciar servidor HLS"
-    echo -e " ${CYAN}[10]${NC} Exportar backup de links"
-    echo -e " ${CYAN}[11]${NC} Importar backup de links"
-    echo -e " ${CYAN}[20]${NC} Limpeza automática de segmentos .ts"
-    echo
-
-    echo -e "${DARKGREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -ne "${GREEN}Selecione uma opção:${NC} "
-    read OP
-
-    case "$OP" in
-        1) add_channel ;;
-        2) stop_channel ;;
-        3) export_playlist ;;
-        4) clean_segments ;;
-        5) backup ;;
-        6) list_channels ;;
-        7) remove_channel ;;
-        8) show_links ;;
-        9) restart_hls ;;
-        10) export_links_backup ;;
-        11) import_links_backup ;;
-        12) activate_channel ;;
-        13) activate_all ;;
-        14) show_off ;;
-        15) show_uptime ;;
-        16) show_viewers ;;
-        17) show_mbps ;;
-        18) glances ;;
-        19) delete_channel ;;
-        20) auto_clean_segments ;;
-        0) exit ;;
-    esac
-done
+        case "$OP" in
+            1) add_channel ;;
+            2) stop_channel ;;
+            3) export_playlist ;;
+            4) clean_segments ;;
+            5) backup ;;
+            6) list_channels ;;
+            7) remove_channel ;;
+            8) show_links ;;
+            9) restart_hls ;;
+            10) export_links_backup ;;
+            11) import_links_backup ;;
+            12) activate_channel ;;
+            13) activate_all ;;
+            14) show_off ;;
+            15) show_uptime ;;
+            16) show_viewers ;;
+            17) show_mbps ;;
+            18) glances ;;
+            19) delete_channel ;;
+            20) auto_clean_segments ;;
+            0) exit ;;
+        esac
+    done
 }
 
 menu
@@ -443,8 +438,7 @@ chmod +x "$MENU"
 
 echo
 echo "================================="
-echo " INSTALAÇÃO CONCLUÍDA - MATRIX EDITION"
+echo " IPTV PRO ELITE v3.0 INSTALADO!"
 echo "================================="
 echo
 echo "Digite: menu"
-echo
