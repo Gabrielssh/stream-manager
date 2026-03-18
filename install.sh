@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =====================================
-# IPTV PRO ELITE v3.0 - MATRIX LAYOUT
+# IPTV PRO SERVER INSTALL + MENU
 # =====================================
 
 set -e
@@ -240,6 +240,8 @@ remove_channel(){
     pause
 }
 
+# ================= NOVA FUNÇÃO 19 =================
+
 delete_channel(){
     clear
     echo "Canais disponíveis:"
@@ -264,11 +266,15 @@ delete_channel(){
     pause
 }
 
+# ================= NOVA FUNÇÃO 20 =================
+
 auto_clean_segments(){
     echo
     echo "Defina o tempo (em minutos) para limpeza automática dos segmentos .ts"
+    echo "Exemplos: 1, 5, 10, 60"
     read -rp "Intervalo (minutos): " INTERVAL
     INTERVAL=${INTERVAL:-5}
+
     echo "Iniciando limpeza automática a cada $INTERVAL minutos. Pressione CTRL+C para parar."
     while true
     do
@@ -365,45 +371,37 @@ show_mbps(){
 }
 
 menu(){
-    GREEN='\033[1;32m'
-    NC='\033[0m'
     while true
     do
         clear
-        echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${GREEN}║${NC} ███████╗██████╗ ███████╗████████╗ ██╗   ██╗███████╗         ${GREEN}║${NC}"
-        echo -e "${GREEN}║${NC} ██╔════╝██╔══██╗██╔════╝╚══██╔══╝ ██║   ██║██╔════╝         ${GREEN}║${NC}"
-        echo -e "${GREEN}║${NC} █████╗  ██████╔╝█████╗     ██║    ██║   ██║█████╗           ${GREEN}║${NC}"
-        echo -e "${GREEN}║${NC} ██╔══╝  ██╔═══╝ ██╔══╝     ██║    ██║   ██║██╔══╝           ${GREEN}║${NC}"
-        echo -e "${GREEN}║${NC} ███████╗██║     ███████╗   ██║    ╚██████╔╝███████╗         ${GREEN}║${NC}"
-        echo -e "${GREEN}╠══════════════════════════════════════════════════════════════╣${NC}"
-
-        printf "${GREEN}║ 1) Adicionar canal                                         ║${NC}\n"
-        printf "${GREEN}║ 2) Parar canal                                             ║${NC}\n"
-        printf "${GREEN}║ 3) Exportar playlist                                       ║${NC}\n"
-        printf "${GREEN}║ 4) Limpar segmentos                                        ║${NC}\n"
-        printf "${GREEN}║ 5) Backup completo                                         ║${NC}\n"
-        printf "${GREEN}║ 6) Listar canais                                           ║${NC}\n"
-        printf "${GREEN}║ 7) Remover canal                                           ║${NC}\n"
-        printf "${GREEN}║ 8) Ver links                                               ║${NC}\n"
-        printf "${GREEN}║ 9) Reiniciar servidor HLS                                  ║${NC}\n"
-        printf "${GREEN}║ 10) Exportar backup de links                                ║${NC}\n"
-        printf "${GREEN}║ 11) Importar backup de links                                ║${NC}\n"
-        printf "${GREEN}║ 12) Ativar canal                                            ║${NC}\n"
-        printf "${GREEN}║ 13) Ativar todos canais                                     ║${NC}\n"
-        printf "${GREEN}║ 14) Mostrar canais OFF                                      ║${NC}\n"
-        printf "${GREEN}║ 15) Tempo online                                            ║${NC}\n"
-        printf "${GREEN}║ 16) Usuários assistindo                                     ║${NC}\n"
-        printf "${GREEN}║ 17) Consumo Mbps por canal                                  ║${NC}\n"
-        printf "${GREEN}║ 18) Monitoramento CPU/RAM/NET (Glances)                    ║${NC}\n"
-        printf "${GREEN}║ 19) Excluir canal criado                                    ║${NC}\n"
-        printf "${GREEN}║ 20) Limpeza automática de segmentos .ts                     ║${NC}\n"
-        echo -e "${GREEN}╠══════════════════════════════════════════════════════════════╣${NC}"
-        printf "${GREEN}║ 0) Sair                                                    ║${NC}\n"
-        echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo " IPTV PRO SERVER"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo
+        echo "1) Adicionar canal"
+        echo "2) Parar canal"
+        echo "3) Exportar playlist"
+        echo "4) Limpar segmentos"
+        echo "5) Backup completo"
+        echo "6) Listar canais"
+        echo "7) Remover canal"
+        echo "8) Ver links"
+        echo "9) Reiniciar servidor HLS"
+        echo "10) Exportar backup de links"
+        echo "11) Importar backup de links"
+        echo "12) Ativar canal"
+        echo "13) Ativar todos canais"
+        echo "14) Mostrar canais OFF"
+        echo "15) Tempo online"
+        echo "16) Usuários assistindo"
+        echo "17) Consumo Mbps por canal"
+        echo "18) Monitoramento CPU/RAM/NET (Glances)"
+        echo "19) Excluir canal criado"
+        echo "20) Limpeza automática de segmentos .ts"
+        echo "0) Sair"
         echo
 
-        read -rp "Selecione uma opção: " OP
+        read -rp "Opção: " OP
 
         case "$OP" in
             1) add_channel ;;
@@ -438,7 +436,8 @@ chmod +x "$MENU"
 
 echo
 echo "================================="
-echo " IPTV PRO ELITE v3.0 INSTALADO!"
+echo " INSTALAÇÃO CONCLUÍDA"
 echo "================================="
 echo
 echo "Digite: menu"
+echo
