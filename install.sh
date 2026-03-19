@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =====================================
-# IPTV PRO SERVER INSTALL + MENU + BOT
-# Versão final com opção 21 para bot
+# IPTV PRO SERVER + BOT TELEGRAM
+# PLUG-AND-PLAY - VERSÃO FINAL
 # =====================================
 
 set -e
@@ -18,13 +18,14 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-echo "Atualizando pacotes e instalando dependências..."
+echo "=============================="
+echo "ATUALIZANDO PACOTES E INSTALANDO DEPENDÊNCIAS..."
+echo "=============================="
 apt update -y
 apt install -y ffmpeg nginx curl python3 python3-pip vnstat glances
 
 echo "Instalando yt-dlp..."
-curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
--o /usr/local/bin/yt-dlp
+curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
 chmod +x /usr/local/bin/yt-dlp
 
 echo "Criando pastas e arquivos..."
@@ -33,7 +34,7 @@ touch "$DB"
 chown -R www-data:www-data /var/www/iptv
 chmod -R 755 /var/www/iptv
 
-# ================= NGINX =================
+# ================= CONFIGURAÇÃO NGINX =================
 cat > /etc/nginx/sites-available/iptv <<EOF
 server {
     listen 8080 default_server;
