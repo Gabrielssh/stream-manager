@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-
 # =====================================
 # IPTV PRO SERVER INSTALL + MENU + BOT
+# Versão final com opção 21 para bot
 # =====================================
 
 set -e
@@ -18,16 +18,18 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+echo "Atualizando pacotes e instalando dependências..."
 apt update -y
-apt install -y ffmpeg nginx curl vnstat python3 glances python3-pip
+apt install -y ffmpeg nginx curl python3 python3-pip vnstat glances
 
+echo "Instalando yt-dlp..."
 curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
 -o /usr/local/bin/yt-dlp
 chmod +x /usr/local/bin/yt-dlp
 
+echo "Criando pastas e arquivos..."
 mkdir -p "$HLS" "$BASE/backup" "$BASE/logs"
 touch "$DB"
-
 chown -R www-data:www-data /var/www/iptv
 chmod -R 755 /var/www/iptv
 
@@ -41,12 +43,10 @@ server {
 
     location / {
         autoindex on;
-
         types {
             application/vnd.apple.mpegurl m3u8;
             video/mp2t ts;
         }
-
         add_header Cache-Control no-cache;
         add_header Access-Control-Allow-Origin *;
     }
@@ -55,7 +55,6 @@ EOF
 
 ln -sf /etc/nginx/sites-available/iptv /etc/nginx/sites-enabled/iptv
 rm -f /etc/nginx/sites-enabled/default
-
 nginx -t
 systemctl restart nginx
 systemctl enable nginx
@@ -73,20 +72,11 @@ BACKUP_DIR="$BASE/backup"
 pause(){ read -rp "Pressione ENTER..."; }
 
 sanitize(){ echo "$1" | tr ' ' '_' | tr -cd '[:alnum:]_'; }
-
-normalize_link(){
-    echo "$1" | sed 's#m.youtube.com#www.youtube.com#g' | cut -d "&" -f1
-}
+normalize_link(){ echo "$1" | sed 's#m.youtube.com#www.youtube.com#g' | cut -d "&" -f1; }
 
 select_quality(){
-    echo
-    echo "Escolher qualidade:"
-    echo "1) 360p"
-    echo "2) 480p"
-    echo "3) 720p"
-    echo "4) 1080p"
-    echo "5) Melhor disponível"
-    echo
+    echo; echo "Escolher qualidade:"
+    echo "1) 360p"; echo "2) 480p"; echo "3) 720p"; echo "4) 1080p"; echo "5) Melhor disponível"; echo
     read -rp "Opção: " Q
     case "$Q" in
         1) QUALITY='best[height<=360]' ;;
@@ -99,97 +89,46 @@ select_quality(){
 }
 
 create_service(){
-    NAME="$1"
-    LINK="$2"
-    QUALITY="$3"
-
-    SCRIPT="/root/iptv_pro/run-$NAME.sh"
-    SERVICE="/etc/systemd/system/iptv-$NAME.service"
-
+    NAME="$1"; LINK="$2"; QUALITY="$3"
+    SCRIPT="$BASE/run-$NAME.sh"; SERVICE="/etc/systemd/system/iptv-$NAME.service"
     cat > "$SCRIPT" <<EOF2
 #!/usr/bin/env bash
-HLS="/var/www/iptv/hls"
-while true
-do
+HLS="$HLS"
+while true; do
 URL=\$(/usr/local/bin/yt-dlp --no-playlist -f "$QUALITY" -g "$LINK" 2>/dev/null)
 if [ -z "\$URL" ]; then sleep 5; continue; fi
-/usr/bin/ffmpeg -loglevel error -re -i "\$URL" \
--c:v copy -c:a aac \
--f hls -hls_time 4 -hls_list_size 6 \
--hls_flags delete_segments+append_list \
-"\$HLS/$NAME.m3u8"
+/usr/bin/ffmpeg -loglevel error -re -i "\$URL" -c:v copy -c:a aac -f hls -hls_time 4 -hls_list_size 6 -hls_flags delete_segments+append_list "\$HLS/$NAME.m3u8"
 sleep 5
 done
 EOF2
-
     chmod +x "$SCRIPT"
-
     cat > "$SERVICE" <<EOF2
 [Unit]
 Description=IPTV Channel $NAME
 After=network.target
-
 [Service]
 Type=simple
 ExecStart=$SCRIPT
 Restart=always
 RestartSec=5
-
 [Install]
 WantedBy=multi-user.target
 EOF2
-
     systemctl daemon-reload
     systemctl enable iptv-$NAME
     systemctl restart iptv-$NAME
 }
 
-add_channel(){
-    clear
-    read -rp "Nome do canal: " NAME
-    NAME=$(sanitize "$NAME")
-    read -rp "Link: " LINK
-    LINK=$(normalize_link "$LINK")
-    select_quality
-    echo "$NAME|$LINK|$QUALITY" >> "$DB"
-    create_service "$NAME" "$LINK" "$QUALITY"
-    echo "Canal iniciado"
-    pause
-}
-
-export_links_backup(){
-    DATE=$(date +%Y%m%d_%H%M%S)
-    cp "$DB" "$BACKUP_DIR/links_backup_$DATE.db"
-    echo "Backup criado em $BACKUP_DIR/links_backup_$DATE.db"
-    pause
-}
-
-import_links_backup(){
-    echo "Backups disponíveis:"
-    ls -1 "$BACKUP_DIR"/links_backup_*.db 2>/dev/null || echo "Nenhum backup encontrado"
-    echo
-    read -rp "Digite o nome completo do arquivo: " FILE
-    FULL_PATH="$BACKUP_DIR/$FILE"
-    if [ -f "$FULL_PATH" ]; then
-        cp "$FULL_PATH" "$DB"
-        while IFS="|" read -r NAME LINK QUALITY; do
-            create_service "$NAME" "$LINK" "$QUALITY"
-        done < "$DB"
-        echo "Backup importado e serviços recriados."
-    else
-        echo "Arquivo não encontrado!"
-    fi
-    pause
-}
-
-stop_channel(){ read -rp "Nome do canal: " NAME; systemctl stop iptv-$NAME; pause; }
-activate_channel(){ read -rp "Nome do canal: " NAME; systemctl restart iptv-$NAME; pause; }
+# ================= FUNÇÕES MENU =================
+add_channel(){ clear; read -rp "Nome do canal: " NAME; NAME=$(sanitize "$NAME"); read -rp "Link: " LINK; LINK=$(normalize_link "$LINK"); select_quality; echo "$NAME|$LINK|$QUALITY" >> "$DB"; create_service "$NAME" "$LINK" "$QUALITY"; echo "Canal iniciado"; pause; }
+export_links_backup(){ DATE=$(date +%Y%m%d_%H%M%S); cp "$DB" "$BACKUP_DIR/links_backup_$DATE.db"; echo "Backup criado em $BACKUP_DIR/links_backup_$DATE.db"; pause; }
+import_links_backup(){ echo "Backups disponíveis:"; ls -1 "$BACKUP_DIR"/links_backup_*.db 2>/dev/null || echo "Nenhum backup encontrado"; echo; read -rp "Arquivo: " FILE; FULL_PATH="$BACKUP_DIR/$FILE"; if [ -f "$FULL_PATH" ]; then cp "$FULL_PATH" "$DB"; while IFS="|" read -r NAME LINK QUALITY; do create_service "$NAME" "$LINK" "$QUALITY"; done < "$DB"; echo "Backup importado e serviços recriados."; else echo "Arquivo não encontrado!"; fi; pause; }
+stop_channel(){ read -rp "Nome: " NAME; systemctl stop iptv-$NAME; pause; }
+activate_channel(){ read -rp "Nome: " NAME; systemctl restart iptv-$NAME; pause; }
 activate_all(){ while IFS="|" read -r NAME LINK QUALITY; do systemctl restart iptv-$NAME; done < "$DB"; pause; }
-remove_channel(){ read -rp "Nome do canal: " NAME; systemctl stop iptv-$NAME; systemctl disable iptv-$NAME; rm -f /etc/systemd/system/iptv-$NAME.service "$HLS/$NAME.m3u8" "$HLS/$NAME"*.ts "/root/iptv_pro/run-$NAME.sh"; sed -i "/^$NAME|/d" "$DB"; systemctl daemon-reload; pause; }
-delete_channel(){ clear; echo "Canais disponíveis:"; cut -d "|" -f1 "$DB"; echo; read -rp "Nome: " NAME; NAME=$(sanitize "$NAME"); if grep -q "^$NAME|" "$DB"; then systemctl stop iptv-$NAME; systemctl disable iptv-$NAME; rm -f /etc/systemd/system/iptv-$NAME.service "$HLS/$NAME.m3u8" "$HLS/$NAME"*.ts "/root/iptv_pro/run-$NAME.sh"; sed -i "/^$NAME|/d" "$DB"; systemctl daemon-reload; echo "Canal '$NAME' excluído!"; else echo "Não encontrado!"; fi; pause; }
-
-auto_clean_segments(){ echo; echo "Defina o tempo (minutos) para limpeza automática:"; read -rp "Intervalo: " INTERVAL; INTERVAL=${INTERVAL:-5}; echo "Limpeza iniciada a cada $INTERVAL min. CTRL+C para parar."; while true; do find "$HLS" -name "*.ts" -mmin +"$INTERVAL" -delete; sleep "$((INTERVAL * 60))"; done }
-
+remove_channel(){ read -rp "Nome: " NAME; systemctl stop iptv-$NAME; systemctl disable iptv-$NAME; rm -f /etc/systemd/system/iptv-$NAME.service "$HLS/$NAME.m3u8" "$HLS/$NAME"*.ts "$BASE/run-$NAME.sh"; sed -i "/^$NAME|/d" "$DB"; systemctl daemon-reload; pause; }
+delete_channel(){ clear; echo "Canais disponíveis:"; cut -d "|" -f1 "$DB"; echo; read -rp "Nome: " NAME; NAME=$(sanitize "$NAME"); if grep -q "^$NAME|" "$DB"; then systemctl stop iptv-$NAME; systemctl disable iptv-$NAME; rm -f /etc/systemd/system/iptv-$NAME.service "$HLS/$NAME.m3u8" "$HLS/$NAME"*.ts "$BASE/run-$NAME.sh"; sed -i "/^$NAME|/d" "$DB"; systemctl daemon-reload; echo "Canal '$NAME' excluído!"; else echo "Não encontrado!"; fi; pause; }
+auto_clean_segments(){ echo; echo "Defina o tempo (minutos) para limpeza automática:"; read -rp "Intervalo: " INTERVAL; INTERVAL=${INTERVAL:-5}; echo "Limpeza iniciada a cada $INTERVAL min. CTRL+C para parar."; while true; do find "$HLS" -name "*.ts" -mmin +"$INTERVAL" -delete; sleep "$((INTERVAL * 60))"; done; }
 list_channels(){ cut -d "|" -f1 "$DB"; pause; }
 show_links(){ IP=$(hostname -I | awk '{print $1}'); while IFS="|" read -r NAME LINK QUALITY; do echo "$NAME"; echo "http://$IP:8080/$NAME.m3u8"; echo; done < "$DB"; pause; }
 export_playlist(){ IP=$(hostname -I | awk '{print $1}'); echo "#EXTM3U" > "$PLAYLIST"; while IFS="|" read -r NAME LINK QUALITY; do echo "#EXTINF:-1,$NAME"; echo "http://$IP:8080/$NAME.m3u8"; done < "$DB"; pause; }
@@ -201,7 +140,7 @@ show_uptime(){ while IFS="|" read -r NAME LINK QUALITY; do echo "$NAME"; systemc
 show_viewers(){ for FILE in "$HLS"/*.m3u8; do [ -f "$FILE" ] || continue; NAME=$(basename "$FILE" .m3u8); COUNT=$(grep "$NAME" /var/log/nginx/access.log | awk '{print $1}' | sort | uniq | wc -l); echo "$NAME : $COUNT usuários"; done; pause; }
 show_mbps(){ for FILE in "$HLS"/*.m3u8; do [ -f "$FILE" ] || continue; NAME=$(basename "$FILE" .m3u8); BYTES=$(grep "$NAME" /var/log/nginx/access.log | awk '{sum+=$10} END {print sum}'); [ -z "$BYTES" ] && BYTES=0; MBPS=$(awk "BEGIN {printf \"%.2f\", ($BYTES*8)/(1024*1024)}"); echo "$NAME : $MBPS Mbps"; done; pause; }
 
-# ================= NOVA FUNÇÃO 21 =================
+# ================= FUNÇÃO 21 - BOT TELEGRAM =================
 start_bot_telegram(){
     if [ ! -f "$BASE/iptv_bot.py" ]; then
         echo "❌ Bot não encontrado em $BASE/iptv_bot.py"
@@ -214,13 +153,11 @@ start_bot_telegram(){
 [Unit]
 Description=IPTV PRO Bot Telegram
 After=network.target
-
 [Service]
 User=root
 WorkingDirectory=$BASE
 ExecStart=/usr/bin/python3 $BASE/iptv_bot.py
 Restart=always
-
 [Install]
 WantedBy=multi-user.target
 EOF2
@@ -232,6 +169,7 @@ EOF2
     pause
 }
 
+# ================= MENU =================
 menu(){
     while true
     do
@@ -265,7 +203,6 @@ menu(){
         echo
 
         read -rp "Opção: " OP
-
         case "$OP" in
             1) add_channel ;;
             2) stop_channel ;;
