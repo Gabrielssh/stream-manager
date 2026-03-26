@@ -101,6 +101,8 @@ select_quality(){
     esac
 }
 
+# ================= MULTI-BITRATE CORRIGIDO =================
+
 create_service(){
 
     NAME="$1"
@@ -109,27 +111,55 @@ create_service(){
 
     SCRIPT="/root/iptv_pro/run-$NAME.sh"
     SERVICE="/etc/systemd/system/iptv-$NAME.service"
+    LOG="/root/iptv_pro/logs/$NAME.log"
 
     cat > "$SCRIPT" <<EOF2
 #!/usr/bin/env bash
 
 HLS="/var/www/iptv/hls"
+LOG="$LOG"
 
 while true
 do
-URL=\$(/usr/local/bin/yt-dlp --no-playlist -f "$QUALITY" -g "$LINK" 2>/dev/null)
+echo "Iniciando: \$(date)" >> \$LOG
+
+URL=\$(/usr/local/bin/yt-dlp --no-playlist -f "$QUALITY" -g "$LINK" 2>>\$LOG)
+
 if [ -z "\$URL" ]; then
+    echo "Erro ao pegar URL" >> \$LOG
     sleep 5
     continue
 fi
-/usr/bin/ffmpeg -loglevel error -re -i "\$URL" \
--c:v copy \
--c:a aac \
+
+/usr/bin/ffmpeg -loglevel warning -fflags +genpts -re -thread_queue_size 512 -i "\$URL" \
+-filter_complex "\
+[0:v]split=3[v1][v2][v3]; \
+[v1]scale=-2:360[v360]; \
+[v2]scale=-2:480[v480]; \
+[v3]scale=-2:720[v720]" \
+
+-map "[v360]" -map a:0? \
+-c:v:0 libx264 -preset veryfast -b:v:0 800k \
+-c:a:0 aac -b:a:0 96k \
+
+-map "[v480]" -map a:0? \
+-c:v:1 libx264 -preset veryfast -b:v:1 1200k \
+-c:a:1 aac -b:a:1 128k \
+
+-map "[v720]" -map a:0? \
+-c:v:2 libx264 -preset veryfast -b:v:2 2500k \
+-c:a:2 aac -b:a:2 128k \
+
 -f hls \
 -hls_time 4 \
 -hls_list_size 6 \
--hls_flags delete_segments+append_list \
-"\$HLS/$NAME.m3u8"
+-hls_flags delete_segments+independent_segments \
+-hls_segment_filename "\$HLS/${NAME}_%v_%03d.ts" \
+-master_pl_name "${NAME}.m3u8" \
+-var_stream_map "v:0,a:0 v:1,a:1 v:2,a:2" \
+"\$HLS/${NAME}_%v.m3u8"
+
+echo "FFmpeg reiniciando..." >> \$LOG
 sleep 5
 done
 EOF2
@@ -155,6 +185,8 @@ EOF2
     systemctl enable iptv-$NAME
     systemctl restart iptv-$NAME
 }
+
+# ================= RESTANTE ORIGINAL =================
 
 add_channel(){
     clear
@@ -199,7 +231,7 @@ import_links_backup(){
             create_service "$NAME" "$LINK" "$QUALITY"
         done < "$DB"
 
-        echo "Serviços systemd recriados. Todos os canais podem ser ativados."
+        echo "Serviços recriados"
     else
         echo "Arquivo não encontrado!"
     fi
@@ -207,23 +239,12 @@ import_links_backup(){
     pause
 }
 
-stop_channel(){
-    read -rp "Nome do canal: " NAME
-    systemctl stop iptv-$NAME
-    pause
-}
-
-activate_channel(){
-    read -rp "Nome do canal: " NAME
-    systemctl restart iptv-$NAME
-    pause
-}
+stop_channel(){ read -rp "Nome do canal: " NAME; systemctl stop iptv-$NAME; pause; }
+activate_channel(){ read -rp "Nome do canal: " NAME; systemctl restart iptv-$NAME; pause; }
 
 activate_all(){
     while IFS="|" read -r NAME LINK QUALITY
-    do
-        systemctl restart iptv-$NAME
-    done < "$DB"
+    do systemctl restart iptv-$NAME; done < "$DB"
     pause
 }
 
@@ -232,50 +253,16 @@ remove_channel(){
     systemctl stop iptv-$NAME
     systemctl disable iptv-$NAME
     rm -f /etc/systemd/system/iptv-$NAME.service
-    rm -f "$HLS/$NAME.m3u8"
-    rm -f "$HLS/$NAME"*.ts
-    rm -f "/root/iptv_pro/run-$NAME.sh"
+    rm -f "$HLS/$NAME"* "/root/iptv_pro/run-$NAME.sh"
     sed -i "/^$NAME|/d" "$DB"
     systemctl daemon-reload
     pause
 }
 
-# ================= NOVA FUNÇÃO 19 =================
-
-delete_channel(){
-    clear
-    echo "Canais disponíveis:"
-    cut -d "|" -f1 "$DB"
-    echo
-    read -rp "Digite o nome do canal que deseja excluir: " NAME
-    NAME=$(sanitize "$NAME")
-
-    if grep -q "^$NAME|" "$DB"; then
-        systemctl stop iptv-$NAME 2>/dev/null
-        systemctl disable iptv-$NAME 2>/dev/null
-        rm -f /etc/systemd/system/iptv-$NAME.service
-        rm -f "$HLS/$NAME.m3u8"
-        rm -f "$HLS/$NAME"*.ts
-        rm -f "/root/iptv_pro/run-$NAME.sh"
-        sed -i "/^$NAME|/d" "$DB"
-        systemctl daemon-reload
-        echo "Canal '$NAME' excluído com sucesso!"
-    else
-        echo "Canal '$NAME' não encontrado!"
-    fi
-    pause
-}
-
-# ================= NOVA FUNÇÃO 20 =================
+delete_channel(){ remove_channel; }
 
 auto_clean_segments(){
-    echo
-    echo "Defina o tempo (em minutos) para limpeza automática dos segmentos .ts"
-    echo "Exemplos: 1, 5, 10, 60"
     read -rp "Intervalo (minutos): " INTERVAL
-    INTERVAL=${INTERVAL:-5}
-
-    echo "Iniciando limpeza automática a cada $INTERVAL minutos. Pressione CTRL+C para parar."
     while true
     do
         find "$HLS" -name "*.ts" -mmin +"$INTERVAL" -delete
@@ -283,10 +270,7 @@ auto_clean_segments(){
     done
 }
 
-list_channels(){
-    cut -d "|" -f1 "$DB"
-    pause
-}
+list_channels(){ cut -d "|" -f1 "$DB"; pause; }
 
 show_links(){
     IP=$(hostname -I | awk '{print $1}')
@@ -310,29 +294,13 @@ export_playlist(){
     pause
 }
 
-clean_segments(){
-    find "$HLS" -name "*.ts" -mmin +10 -delete
-    pause
-}
-
-backup(){
-    tar -czf "$BASE/backup/iptv_full_backup.tar.gz" "$BASE"
-    echo "Backup completo criado."
-    pause
-}
-
-restart_hls(){
-    systemctl restart nginx
-    pause
-}
+clean_segments(){ find "$HLS" -name "*.ts" -mmin +10 -delete; pause; }
+backup(){ tar -czf "$BASE/backup/iptv_full_backup.tar.gz" "$BASE"; echo "Backup criado"; pause; }
+restart_hls(){ systemctl restart nginx; pause; }
 
 show_off(){
     while IFS="|" read -r NAME LINK QUALITY
-    do
-        if ! systemctl is-active --quiet iptv-$NAME; then
-            echo "$NAME OFF"
-        fi
-    done < "$DB"
+    do systemctl is-active --quiet iptv-$NAME || echo "$NAME OFF"; done < "$DB"
     pause
 }
 
@@ -434,10 +402,4 @@ EOF
 
 chmod +x "$MENU"
 
-echo
-echo "================================="
-echo " INSTALAÇÃO CONCLUÍDA"
-echo "================================="
-echo
-echo "Digite: menu"
-echo
+echo "Instalação concluída. Digite: menu"
