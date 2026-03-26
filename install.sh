@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
 
-# =====================================
-# IPTV PRO SERVER INSTALL + MENU
-# =====================================
-
 set -e
 
 BASE="/root/iptv_pro"
@@ -11,11 +7,6 @@ HLS="/var/www/iptv/hls"
 DB="$BASE/channels.db"
 PLAYLIST="$BASE/playlist.m3u"
 MENU="/usr/local/bin/menu"
-
-if [ "$EUID" -ne 0 ]; then
-    echo "Execute como root"
-    exit 1
-fi
 
 apt update -y
 apt install -y ffmpeg nginx curl vnstat python3 glances
@@ -37,8 +28,8 @@ chmod -R 755 /var/www/iptv
 cat > /etc/nginx/sites-available/iptv <<EOF
 server {
     listen 8080 default_server;
-    listen [::]:8080 default_server;
     server_name _;
+
     root /var/www/iptv/hls;
 
     location / {
@@ -58,51 +49,43 @@ EOF
 ln -sf /etc/nginx/sites-available/iptv /etc/nginx/sites-enabled/iptv
 rm -f /etc/nginx/sites-enabled/default
 
-nginx -t
 systemctl restart nginx
 systemctl enable nginx
 
 # ================= MENU =================
 
-cat > "$MENU" << 'EOF'
+cat > "$MENU" <<'EOF'
 #!/usr/bin/env bash
 
 BASE="/root/iptv_pro"
 HLS="/var/www/iptv/hls"
 DB="$BASE/channels.db"
-PLAYLIST="$BASE/playlist.m3u"
-BACKUP_DIR="$BASE/backup"
 
-pause(){ read -rp "Pressione ENTER..."; }
+pause(){ read -rp "ENTER..."; }
 
 sanitize(){ echo "$1" | tr ' ' '_' | tr -cd '[:alnum:]_'; }
 
 normalize_link(){
-    echo "$1" | sed 's#m.youtube.com#www.youtube.com#g' | cut -d "&" -f1
+    echo "$1" | cut -d "&" -f1
 }
 
 select_quality(){
-    echo
-    echo "Escolher qualidade:"
-    echo "1) 360p"
-    echo "2) 480p"
-    echo "3) 720p"
-    echo "4) 1080p"
-    echo "5) Melhor disponível"
-    echo
+    echo "Qualidade:"
+    echo "1) 480p"
+    echo "2) 720p"
+    echo "3) 1080p"
+    echo "4) Best"
     read -rp "Opção: " Q
+
     case "$Q" in
-        1) QUALITY='best[height<=360]' ;;
-        2) QUALITY='best[height<=480]' ;;
-        3) QUALITY='best[height<=720]' ;;
-        4) QUALITY='best[height<=1080]' ;;
-        5) QUALITY='best' ;;
-        *) QUALITY='best' ;;
+        1) QUALITY="bv*[height<=480]+ba/best[height<=480]" ;;
+        2) QUALITY="bv*[height<=720]+ba/best[height<=720]" ;;
+        3) QUALITY="bv*[height<=1080]+ba/best[height<=1080]" ;;
+        *) QUALITY="bv*+ba/best" ;;
     esac
 }
 
 create_service(){
-
     NAME="$1"
     LINK="$2"
     QUALITY="$3"
@@ -117,19 +100,28 @@ HLS="/var/www/iptv/hls"
 
 while true
 do
-URL=\$(/usr/local/bin/yt-dlp --no-playlist -f "$QUALITY" -g "$LINK" 2>/dev/null)
-if [ -z "\$URL" ]; then
+
+URL_VIDEO=\$(yt-dlp -f "$QUALITY" -g "$LINK" 2>/dev/null | head -n 1)
+URL_AUDIO=\$(yt-dlp -f "$QUALITY" -g "$LINK" 2>/dev/null | tail -n 1)
+
+if [ -z "\$URL_VIDEO" ]; then
     sleep 5
     continue
 fi
-/usr/bin/ffmpeg -loglevel error -re -i "\$URL" \
+
+ffmpeg -hide_banner -loglevel error -re \
+-i "\$URL_VIDEO" \
+-i "\$URL_AUDIO" \
+-map 0:v:0 -map 1:a:0 \
 -c:v copy \
--c:a aac \
+-c:a aac -b:a 128k \
 -f hls \
 -hls_time 4 \
 -hls_list_size 6 \
--hls_flags delete_segments+append_list \
+-hls_flags delete_segments+append_list+independent_segments \
+-hls_segment_type mpegts \
 "\$HLS/$NAME.m3u8"
+
 sleep 5
 done
 EOF2
@@ -138,11 +130,10 @@ EOF2
 
     cat > "$SERVICE" <<EOF2
 [Unit]
-Description=IPTV Channel $NAME
+Description=IPTV $NAME
 After=network.target
 
 [Service]
-Type=simple
 ExecStart=$SCRIPT
 Restart=always
 RestartSec=5
@@ -158,7 +149,7 @@ EOF2
 
 add_channel(){
     clear
-    read -rp "Nome do canal: " NAME
+    read -rp "Nome: " NAME
     NAME=$(sanitize "$NAME")
 
     read -rp "Link: " LINK
@@ -170,117 +161,8 @@ add_channel(){
 
     create_service "$NAME" "$LINK" "$QUALITY"
 
-    echo "Canal iniciado"
+    echo "Canal ativo!"
     pause
-}
-
-export_links_backup(){
-    DATE=$(date +%Y%m%d_%H%M%S)
-    cp "$DB" "$BACKUP_DIR/links_backup_$DATE.db"
-    echo "Backup criado em:"
-    echo "$BACKUP_DIR/links_backup_$DATE.db"
-    pause
-}
-
-import_links_backup(){
-    echo "Backups disponíveis:"
-    ls -1 "$BACKUP_DIR"/links_backup_*.db 2>/dev/null || echo "Nenhum backup encontrado"
-    echo
-    read -rp "Digite o nome completo do arquivo: " FILE
-
-    FULL_PATH="$BACKUP_DIR/$FILE"
-
-    if [ -f "$FULL_PATH" ]; then
-        cp "$FULL_PATH" "$DB"
-        echo "Backup importado com sucesso!"
-
-        while IFS="|" read -r NAME LINK QUALITY
-        do
-            create_service "$NAME" "$LINK" "$QUALITY"
-        done < "$DB"
-
-        echo "Serviços systemd recriados. Todos os canais podem ser ativados."
-    else
-        echo "Arquivo não encontrado!"
-    fi
-
-    pause
-}
-
-stop_channel(){
-    read -rp "Nome do canal: " NAME
-    systemctl stop iptv-$NAME
-    pause
-}
-
-activate_channel(){
-    read -rp "Nome do canal: " NAME
-    systemctl restart iptv-$NAME
-    pause
-}
-
-activate_all(){
-    while IFS="|" read -r NAME LINK QUALITY
-    do
-        systemctl restart iptv-$NAME
-    done < "$DB"
-    pause
-}
-
-remove_channel(){
-    read -rp "Nome do canal: " NAME
-    systemctl stop iptv-$NAME
-    systemctl disable iptv-$NAME
-    rm -f /etc/systemd/system/iptv-$NAME.service
-    rm -f "$HLS/$NAME.m3u8"
-    rm -f "$HLS/$NAME"*.ts
-    rm -f "/root/iptv_pro/run-$NAME.sh"
-    sed -i "/^$NAME|/d" "$DB"
-    systemctl daemon-reload
-    pause
-}
-
-# ================= NOVA FUNÇÃO 19 =================
-
-delete_channel(){
-    clear
-    echo "Canais disponíveis:"
-    cut -d "|" -f1 "$DB"
-    echo
-    read -rp "Digite o nome do canal que deseja excluir: " NAME
-    NAME=$(sanitize "$NAME")
-
-    if grep -q "^$NAME|" "$DB"; then
-        systemctl stop iptv-$NAME 2>/dev/null
-        systemctl disable iptv-$NAME 2>/dev/null
-        rm -f /etc/systemd/system/iptv-$NAME.service
-        rm -f "$HLS/$NAME.m3u8"
-        rm -f "$HLS/$NAME"*.ts
-        rm -f "/root/iptv_pro/run-$NAME.sh"
-        sed -i "/^$NAME|/d" "$DB"
-        systemctl daemon-reload
-        echo "Canal '$NAME' excluído com sucesso!"
-    else
-        echo "Canal '$NAME' não encontrado!"
-    fi
-    pause
-}
-
-# ================= NOVA FUNÇÃO 20 =================
-
-auto_clean_segments(){
-    echo
-    echo "Defina o tempo (em minutos) para limpeza automática dos segmentos .ts"
-    echo "Exemplos: 1, 5, 10, 60"
-    read -rp "Intervalo (minutos): " INTERVAL
-    INTERVAL=${INTERVAL:-5}
-
-    echo "Iniciando limpeza automática a cada $INTERVAL minutos. Pressione CTRL+C para parar."
-    while true
-    do
-        find "$HLS" -name "*.ts" -mmin +"$INTERVAL" -delete
-        sleep "$((INTERVAL * 60))"
-    done
 }
 
 list_channels(){
@@ -288,145 +170,69 @@ list_channels(){
     pause
 }
 
-show_links(){
-    IP=$(hostname -I | awk '{print $1}')
-    while IFS="|" read -r NAME LINK QUALITY
-    do
-        echo "$NAME"
-        echo "http://$IP:8080/$NAME.m3u8"
-        echo
-    done < "$DB"
+stop_channel(){
+    read -rp "Nome: " N
+    systemctl stop iptv-$N
+    pause
+}
+
+activate_channel(){
+    read -rp "Nome: " N
+    systemctl restart iptv-$N
+    pause
+}
+
+remove_channel(){
+    read -rp "Nome: " N
+    systemctl stop iptv-$N
+    systemctl disable iptv-$N
+    rm -f /etc/systemd/system/iptv-$N.service
+    rm -f /root/iptv_pro/run-$N.sh
+    rm -f "$HLS/$N.m3u8"
+    rm -f "$HLS/$N"*.ts
+    sed -i "/^$N|/d" "$DB"
+    systemctl daemon-reload
     pause
 }
 
 export_playlist(){
     IP=$(hostname -I | awk '{print $1}')
-    echo "#EXTM3U" > "$PLAYLIST"
-    while IFS="|" read -r NAME LINK QUALITY
+    echo "#EXTM3U" > "$BASE/playlist.m3u"
+
+    while IFS="|" read -r N L Q
     do
-        echo "#EXTINF:-1,$NAME" >> "$PLAYLIST"
-        echo "http://$IP:8080/$NAME.m3u8" >> "$PLAYLIST"
+        echo "#EXTINF:-1,$N" >> "$BASE/playlist.m3u"
+        echo "http://$IP:8080/$N.m3u8" >> "$BASE/playlist.m3u"
     done < "$DB"
-    pause
-}
 
-clean_segments(){
-    find "$HLS" -name "*.ts" -mmin +10 -delete
-    pause
-}
-
-backup(){
-    tar -czf "$BASE/backup/iptv_full_backup.tar.gz" "$BASE"
-    echo "Backup completo criado."
-    pause
-}
-
-restart_hls(){
-    systemctl restart nginx
-    pause
-}
-
-show_off(){
-    while IFS="|" read -r NAME LINK QUALITY
-    do
-        if ! systemctl is-active --quiet iptv-$NAME; then
-            echo "$NAME OFF"
-        fi
-    done < "$DB"
-    pause
-}
-
-show_uptime(){
-    while IFS="|" read -r NAME LINK QUALITY
-    do
-        echo "$NAME"
-        systemctl show iptv-$NAME --property=ActiveEnterTimestamp
-        echo
-    done < "$DB"
-    pause
-}
-
-show_viewers(){
-    for FILE in "$HLS"/*.m3u8
-    do
-        [ -f "$FILE" ] || continue
-        NAME=$(basename "$FILE" .m3u8)
-        COUNT=$(grep "$NAME" /var/log/nginx/access.log | awk '{print $1}' | sort | uniq | wc -l)
-        echo "$NAME : $COUNT usuários"
-    done
-    pause
-}
-
-show_mbps(){
-    for FILE in "$HLS"/*.m3u8
-    do
-        [ -f "$FILE" ] || continue
-        NAME=$(basename "$FILE" .m3u8)
-        BYTES=$(grep "$NAME" /var/log/nginx/access.log | awk '{sum+=$10} END {print sum}')
-        [ -z "$BYTES" ] && BYTES=0
-        MBPS=$(awk "BEGIN {printf \"%.2f\", ($BYTES*8)/(1024*1024)}")
-        echo "$NAME : $MBPS Mbps"
-    done
+    echo "OK"
     pause
 }
 
 menu(){
-    while true
-    do
-        clear
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo " IPTV PRO SERVER"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo
-        echo "1) Adicionar canal"
-        echo "2) Parar canal"
-        echo "3) Exportar playlist"
-        echo "4) Limpar segmentos"
-        echo "5) Backup completo"
-        echo "6) Listar canais"
-        echo "7) Remover canal"
-        echo "8) Ver links"
-        echo "9) Reiniciar servidor HLS"
-        echo "10) Exportar backup de links"
-        echo "11) Importar backup de links"
-        echo "12) Ativar canal"
-        echo "13) Ativar todos canais"
-        echo "14) Mostrar canais OFF"
-        echo "15) Tempo online"
-        echo "16) Usuários assistindo"
-        echo "17) Consumo Mbps por canal"
-        echo "18) Monitoramento CPU/RAM/NET (Glances)"
-        echo "19) Excluir canal criado"
-        echo "20) Limpeza automática de segmentos .ts"
-        echo "0) Sair"
-        echo
+while true
+do
+clear
+echo "==== IPTV PRO ===="
+echo "1 Add"
+echo "2 Stop"
+echo "3 Playlist"
+echo "4 List"
+echo "5 Remove"
+echo "6 Start"
+echo "0 Exit"
+read -rp "Opção: " OP
 
-        read -rp "Opção: " OP
-
-        case "$OP" in
-            1) add_channel ;;
-            2) stop_channel ;;
-            3) export_playlist ;;
-            4) clean_segments ;;
-            5) backup ;;
-            6) list_channels ;;
-            7) remove_channel ;;
-            8) show_links ;;
-            9) restart_hls ;;
-            10) export_links_backup ;;
-            11) import_links_backup ;;
-            12) activate_channel ;;
-            13) activate_all ;;
-            14) show_off ;;
-            15) show_uptime ;;
-            16) show_viewers ;;
-            17) show_mbps ;;
-            18) glances ;;
-            19) delete_channel ;;
-            20) auto_clean_segments ;;
-            0) exit ;;
-        esac
-    done
+case $OP in
+1) add_channel ;;
+2) stop_channel ;;
+3) export_playlist ;;
+4) list_channels ;;
+5) remove_channel ;;
+6) activate_channel ;;
+0) exit ;;
+esac
+done
 }
 
 menu
@@ -434,10 +240,5 @@ EOF
 
 chmod +x "$MENU"
 
-echo
-echo "================================="
-echo " INSTALAÇÃO CONCLUÍDA"
-echo "================================="
-echo
-echo "Digite: menu"
-echo
+echo "INSTALAÇÃO OK"
+echo "rode: menu"
