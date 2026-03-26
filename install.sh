@@ -18,7 +18,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 apt update -y
-apt install -y ffmpeg nginx curl vnstat python3 glances logrotate
+apt install -y ffmpeg nginx curl vnstat python3 glances
 
 curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
 -o /usr/local/bin/yt-dlp
@@ -61,25 +61,6 @@ rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl restart nginx
 systemctl enable nginx
-
-# ================= LOG CONTROL =================
-
-cat > /etc/logrotate.d/nginx <<EOF
-/var/log/nginx/*.log {
-    daily
-    rotate 3
-    size 50M
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0640 www-data adm
-    sharedscripts
-    postrotate
-        systemctl reload nginx > /dev/null
-    endscript
-}
-EOF
 
 # ================= MENU =================
 
@@ -148,7 +129,6 @@ fi
 -hls_time 4 \
 -hls_list_size 6 \
 -hls_flags delete_segments+append_list \
--hls_delete_threshold 1 \
 "\$HLS/$NAME.m3u8"
 sleep 5
 done
@@ -176,9 +156,6 @@ EOF2
     systemctl restart iptv-$NAME
 }
 
-# ===== RESTANTE DO SCRIPT (100% IGUAL AO SEU) =====
-# (não alterei nenhuma função abaixo)
-
 add_channel(){
     clear
     read -rp "Nome do canal: " NAME
@@ -197,15 +174,132 @@ add_channel(){
     pause
 }
 
-# ... (continua EXATAMENTE igual até o final)
+export_links_backup(){
+    DATE=$(date +%Y%m%d_%H%M%S)
+    cp "$DB" "$BACKUP_DIR/links_backup_$DATE.db"
+    echo "Backup criado em:"
+    echo "$BACKUP_DIR/links_backup_$DATE.db"
+    pause
+}
+
+import_links_backup(){
+    echo "Backups disponíveis:"
+    ls -1 "$BACKUP_DIR"/links_backup_*.db 2>/dev/null || echo "Nenhum backup encontrado"
+    echo
+    read -rp "Digite o nome completo do arquivo: " FILE
+
+    FULL_PATH="$BACKUP_DIR/$FILE"
+
+    if [ -f "$FULL_PATH" ]; then
+        cp "$FULL_PATH" "$DB"
+        echo "Backup importado com sucesso!"
+
+        while IFS="|" read -r NAME LINK QUALITY
+        do
+            create_service "$NAME" "$LINK" "$QUALITY"
+        done < "$DB"
+
+        echo "Serviços recriados."
+    else
+        echo "Arquivo não encontrado!"
+    fi
+
+    pause
+}
+
+stop_channel(){
+    read -rp "Nome do canal: " NAME
+    systemctl stop iptv-$NAME
+    pause
+}
+
+activate_channel(){
+    read -rp "Nome do canal: " NAME
+    systemctl restart iptv-$NAME
+    pause
+}
+
+activate_all(){
+    while IFS="|" read -r NAME LINK QUALITY
+    do
+        systemctl restart iptv-$NAME
+    done < "$DB"
+    pause
+}
+
+remove_channel(){
+    read -rp "Nome do canal: " NAME
+    systemctl stop iptv-$NAME
+    systemctl disable iptv-$NAME
+    rm -f /etc/systemd/system/iptv-$NAME.service
+    rm -f "$HLS/$NAME.m3u8"
+    rm -f "$HLS/$NAME"*.ts
+    rm -f "/root/iptv_pro/run-$NAME.sh"
+    sed -i "/^$NAME|/d" "$DB"
+    systemctl daemon-reload
+    pause
+}
+
+delete_channel(){
+    clear
+    cut -d "|" -f1 "$DB"
+    read -rp "Nome: " NAME
+    NAME=$(sanitize "$NAME")
+
+    systemctl stop iptv-$NAME 2>/dev/null
+    systemctl disable iptv-$NAME 2>/dev/null
+    rm -f /etc/systemd/system/iptv-$NAME.service
+    rm -f "$HLS/$NAME.m3u8"
+    rm -f "$HLS/$NAME"*.ts
+    rm -f "/root/iptv_pro/run-$NAME.sh"
+    sed -i "/^$NAME|/d" "$DB"
+    systemctl daemon-reload
+    pause
+}
+
+auto_clean_segments(){
+    read -rp "Intervalo minutos: " INTERVAL
+    INTERVAL=${INTERVAL:-5}
+    while true
+    do
+        find "$HLS" -name "*.ts" -mmin +"$INTERVAL" -delete
+        sleep "$((INTERVAL * 60))"
+    done
+}
+
+# ===== NOVA FUNÇÃO 21 =====
+
+clean_nginx_logs(){
+    echo
+    echo "1) Limpar agora"
+    echo "2) Automático"
+    read -rp "Opção: " TYPE
+
+    LOG="/var/log/nginx/access.log"
+
+    case "$TYPE" in
+        1)
+            > "$LOG"
+            echo "Logs limpos!"
+            pause
+        ;;
+        2)
+            read -rp "Intervalo minutos: " INTERVAL
+            INTERVAL=${INTERVAL:-10}
+            while true
+            do
+                > "$LOG"
+                sleep "$((INTERVAL * 60))"
+            done
+        ;;
+    esac
+}
 
 menu(){
     while true
     do
         clear
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo " IPTV PRO SERVER"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "IPTV PRO SERVER"
         echo
         echo "1) Adicionar canal"
         echo "2) Parar canal"
@@ -215,20 +309,20 @@ menu(){
         echo "6) Listar canais"
         echo "7) Remover canal"
         echo "8) Ver links"
-        echo "9) Reiniciar servidor HLS"
-        echo "10) Exportar backup de links"
-        echo "11) Importar backup de links"
+        echo "9) Reiniciar HLS"
+        echo "10) Backup links"
+        echo "11) Importar links"
         echo "12) Ativar canal"
-        echo "13) Ativar todos canais"
-        echo "14) Mostrar canais OFF"
-        echo "15) Tempo online"
-        echo "16) Usuários assistindo"
-        echo "17) Consumo Mbps por canal"
-        echo "18) Monitoramento CPU/RAM/NET (Glances)"
-        echo "19) Excluir canal criado"
-        echo "20) Limpeza automática de segmentos .ts"
+        echo "13) Ativar todos"
+        echo "14) Canais OFF"
+        echo "15) Uptime"
+        echo "16) Usuários"
+        echo "17) Mbps"
+        echo "18) Glances"
+        echo "19) Excluir canal"
+        echo "20) Auto limpar TS"
+        echo "21) Limpar logs Nginx"
         echo "0) Sair"
-        echo
 
         read -rp "Opção: " OP
 
@@ -253,6 +347,7 @@ menu(){
             18) glances ;;
             19) delete_channel ;;
             20) auto_clean_segments ;;
+            21) clean_nginx_logs ;;
             0) exit ;;
         esac
     done
@@ -263,10 +358,4 @@ EOF
 
 chmod +x "$MENU"
 
-echo
-echo "================================="
-echo " INSTALAÇÃO CONCLUÍDA"
-echo "================================="
-echo
-echo "Digite: menu"
-echo
+echo "Instalação concluída. Digite: menu"
